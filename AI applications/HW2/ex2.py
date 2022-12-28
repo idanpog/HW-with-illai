@@ -9,6 +9,7 @@ import itertools
 import random
 import numpy as np
 from tqdm import tqdm
+from time import time
 
 RESET_PENALTY = 50
 REFUEL_PENALTY = 10
@@ -44,16 +45,22 @@ class OptimalTaxiAgent:
         # self.add_change_prob(self.initial)
         self.graph = self.build_graph()
         self.state = self.initial
+        self.all_actions_dict = dict()
+        self.next_dict = dict()
+        self.inner_prob_dict = dict()
         # self.policy = self.policy_iterations(max_iterations=self.initial[TURNS_TO_GO])
 
-        self.policy = self.value_iterations(epsilon=10e-7, gamma=0.9)
+        self.policy = self.value_iterations()
+        # print(f"the expected value is {self.policy[self.initial]}")
+
     def init_to_tup(self, initial):
         """converts the initial state to a tuple"""
         taxis = initial["taxis"]
         passengers = initial["passengers"]
         passengers_tups = tuple([(passenger, passengers[passenger]["location"],
                                   passengers[passenger]["destination"], passengers[passenger]['possible_goals'],
-                                  (1 / (len(passengers[passenger]['possible_goals']) - 1) *
+                                  ((len(passengers[passenger]['possible_goals']) - 1) / (
+                                      len(passengers[passenger]['possible_goals'])) *
                                    passengers[passenger]['prob_change_goal'])) for passenger in passengers])
         taxis_tups = tuple([(taxi, taxis[taxi]["location"], taxis[taxi]["fuel"], taxis[taxi]["capacity"])
                             for taxi in taxis])
@@ -160,6 +167,11 @@ class OptimalTaxiAgent:
         return action if action != ("reset",) else "reset"
 
     def all_actions(self, state):
+        if state not in self.all_actions_dict:
+            self.all_actions_dict[state] = self.all_actions_aux(state)
+        return self.all_actions_dict[state]
+
+    def all_actions_aux(self, state):
         """
         return all possible actions
         """
@@ -193,11 +205,12 @@ class OptimalTaxiAgent:
             for action in all_actions:
                 for taxi_action in action:
                     for taxi2_action in action:
-                        if (taxi_action[0] == 'move' and taxi2_action[0] == 'move' and taxi_action[2] == taxi2_action[
-                            2]) or \
-                                (taxi_action[0] == 'move' and taxi2_action[0] != 'move' and taxi_action[2] ==
-                                 state[TAXIS][self.tName2id[taxi2_action[1]]][LOC]):
-                            all_actions.remove(action)
+                        if taxi_action[1] != taxi2_action[1]:
+                            if (taxi_action[0] == 'move' and taxi2_action[0] == 'move' and taxi_action[2] == taxi2_action[
+                                2]) or \
+                                    (taxi_action[0] == 'move' and taxi2_action[0] != 'move' and taxi_action[2] ==
+                                     state[TAXIS][self.tName2id[taxi2_action[1]]][LOC]):
+                                all_actions.remove(action)
         all_actions.append(('reset',))
         # terminate action
         # all_actions.append('terminate')
@@ -208,15 +221,23 @@ class OptimalTaxiAgent:
         turns_to_go = self.state[TURNS_TO_GO] + 1
         all_states = defaultdict(lambda: set())
         all_states[0] = set((self.state,))
-        for i in (tq := tqdm(range(1, turns_to_go), leave=False)):
+        for i in (tq := tqdm(range(1, turns_to_go + 1), leave=False)):
             # diff = new_states.difference(old_states)
             # old_states = new_states.copy()
             count = 0
             for state in all_states[i - 1]:
+                self.all_actions_dict[state] = {}
+                self.next_dict[state] = {}
                 count += 1
-                for action in self.all_actions(state):
+                for action in self.all_actions_aux(state):
                     new_state = self.next(state, action)
-                    all_states[i].update(self.split_across_MDP(new_state))
+                    self.next_dict[state][action] = new_state
+                    all_new_states = self.split_across_MDP(new_state)
+                    all_states[i].update(all_new_states)
+                    if action in self.all_actions_dict[state]:
+                        self.all_actions_dict[state][action].append(list(all_new_states))
+                    else:
+                        self.all_actions_dict[state][action] = list(all_new_states)
             tq.set_description(f"Generating all states")
         return all_states
 
@@ -243,7 +264,7 @@ class OptimalTaxiAgent:
             passenger = state[PASSENGERS][0]
             for goal in passenger[POSSIBLE_DESTINATIONS]:
                 new_state = (state[TAXIS], (
-                (passenger[NAME], passenger[LOC], goal, passenger[POSSIBLE_DESTINATIONS], passenger[PROBABILITY]),),
+                    (passenger[NAME], passenger[LOC], goal, passenger[POSSIBLE_DESTINATIONS], passenger[PROBABILITY]),),
                              state[TURNS_TO_GO])
                 new_states.add(new_state)
         return new_states
@@ -264,22 +285,29 @@ class OptimalTaxiAgent:
 
     def inner(self, state, action, new_state, old_values):
         """returns the probability of the new state given the state and action"""
-        prob = 1
-        next_state = self.next(state, action)
-        for curr_passenger, new_passenger in zip(next_state[PASSENGERS], new_state[PASSENGERS]):
-            if curr_passenger[LOC] != new_passenger[LOC]:
-                prob *= curr_passenger[PROBABILITY]
-        return prob * old_values[new_state]
+        if (state, action, new_state) in self.inner_prob_dict:
+            return self.inner_prob_dict[(state, action, new_state)] * old_values[new_state]
+        else:
+            prob = 1
+            # next_state = self.next(state, action)
+            next_state = self.next_dict[state][action]
+            for curr_passenger, new_passenger in zip(next_state[PASSENGERS], new_state[PASSENGERS]):
+                if curr_passenger[DESTINATION] != new_passenger[DESTINATION]:
+                    prob *= curr_passenger[PROBABILITY]
+                else:
+                    prob *= (1 - curr_passenger[PROBABILITY])
+            self.inner_prob_dict[(state, action, new_state)] = prob
+            return self.inner_prob_dict[(state, action, new_state)] * old_values[new_state]
 
-    def expected_value(self, state, action, gamma, old_values):
+    def expected_value(self, state, action, old_values):
         """
         return the expected value of the action in the state
         """
-        next_states = self.split_across_MDP(self.next(state, action))
+        if state[TURNS_TO_GO] == 0:
+            return 0
+        next_states = self.all_actions_dict[state][action]
         reward = self.reward(state, action)
-        ex = gamma * sum([self.inner(state, action, next_state, old_values)
-                                                         for next_state in next_states]) if state[
-                                                                                                TURNS_TO_GO] > 0 else 0
+        ex = sum([self.inner(state, action, next_state, old_values) for next_state in next_states])
         return reward + ex
 
     def policy_iterations(self, max_iterations=200, gamma=0.9, epsilon=1e-21):
@@ -310,7 +338,7 @@ class OptimalTaxiAgent:
                 for state in all_state_list[i]:
                     old_value = old_values[state]
                     counter += 1
-                    for action in self.all_actions(state):
+                    for action in self.all_actions_dict[state].keys():
                         expected = self.expected_value(state, action, gamma, old_values)
                         if expected > values[state]:
                             values[state] = expected
@@ -322,26 +350,30 @@ class OptimalTaxiAgent:
 
         return policy
 
-    def value_iterations(self, gamma, epsilon, max_iterations=100):
+    def value_iterations(self, max_iterations=100):
         """
         value iteration algorithm, using dynamic programming
         """
         all_state_list = self.generate_all_states()
+        # print(sum([len(list(all_state_list[i])) for i in range(max_iterations + 1)]))
         values = dict([(s, 0) for i in range(max_iterations + 1) for s in all_state_list[i]])
         policy = dict(
-            [(s, random.choice(self.all_actions(s))) for i in range(max_iterations + 1) for s in all_state_list[i]])
-        delta = float('inf')
-        for iter in (tq := tqdm(range(max_iterations), leave=True, position=0)):
-            delta = 0
-            old_values = values.copy()
-            for i in range(max_iterations + 1):
-                for state in all_state_list[i]:
-                    old_value = old_values[state]
-                    action_values = [self.expected_value(state, a, gamma, old_values) for a in self.all_actions(state)]
-                    values[state] = max(action_values)
-                    policy[state] = self.all_actions(state)[np.argmax(action_values)]
-                    delta = max(delta, abs(old_value - values[state]))
+            [(s, random.choice(list(self.all_actions_dict[s].keys()))) for i in range(max_iterations + 1) for s in
+             all_state_list[i]])
+        # for iter in (tq := tqdm(range(max_iterations), leave=True, position=0)):
+        start = time()
+        for i in range(max_iterations - 1, -1, -1):
+            for state in all_state_list[i]:
+                actions = list(self.all_actions_dict[state].keys())
+                action_values = [self.expected_value(state, a, values) for a in actions]
+                values[state] = max(action_values)
+                policy[state] = actions[np.argmax(action_values)]
+        end = time()
+        print("Time taken: ", end - start)
+        print(f"{values[list(all_state_list[0])[0]]=}")
         return policy
+
+
 class TaxiAgent:
     def __init__(self, initial):
         self.initial = initial
