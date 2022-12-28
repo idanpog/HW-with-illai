@@ -2,6 +2,13 @@ ids = ["212778229", "325069565"]
 
 import networkx as nx
 import logging
+from copy import deepcopy
+from collections import defaultdict
+from utils import FIFOQueue
+import itertools
+import random
+import numpy as np
+from tqdm import tqdm
 
 RESET_PENALTY = 50
 REFUEL_PENALTY = 10
@@ -9,169 +16,332 @@ DROP_IN_DESTINATION_REWARD = 100
 INIT_TIME_LIMIT = 300
 TURN_TIME_LIMIT = 0.1
 
+# random.seed(10)
+
+
+TAXIS = 0
+# Taxi params
+NAME = 0
+LOC = 1
+FUEL = 2
+CAP = 3
+
+PASSENGERS = 1
+# Passenger params
+DESTINATION = 2
+POSSIBLE_DESTINATIONS = 3
+PROBABILITY = 4
+
+TURNS_TO_GO = 2
 
 
 class OptimalTaxiAgent:
     def __init__(self, initial):
-        self.initial = initial
+        self.map = initial["map"]
+        self.initial = self.init_to_tup(initial)
+        self.tName2id = self.taxi_name_to_id()
+        self.pName2id = self.passenger_name_to_id()
+        # self.add_change_prob(self.initial)
         self.graph = self.build_graph()
         self.state = self.initial
+        # self.policy = self.policy_iterations(max_iterations=self.initial[TURNS_TO_GO])
+
+        self.policy = self.value_iterations(epsilon=10e-7, gamma=0.9)
+    def init_to_tup(self, initial):
+        """converts the initial state to a tuple"""
+        taxis = initial["taxis"]
+        passengers = initial["passengers"]
+        passengers_tups = tuple([(passenger, passengers[passenger]["location"],
+                                  passengers[passenger]["destination"], passengers[passenger]['possible_goals'],
+                                  (1 / (len(passengers[passenger]['possible_goals']) - 1) *
+                                   passengers[passenger]['prob_change_goal'])) for passenger in passengers])
+        taxis_tups = tuple([(taxi, taxis[taxi]["location"], taxis[taxi]["fuel"], taxis[taxi]["capacity"])
+                            for taxi in taxis])
+        initial = (taxis_tups, passengers_tups, initial["turns to go"])
+        return initial
+
+    def taxi_name_to_id(self):
+        d = {}
+        idx = 0
+        for taxi in self.initial[TAXIS]:
+            d[taxi[NAME]] = idx
+        return d
+
+    def passenger_name_to_id(self):
+        d = {}
+        idx = 0
+        for passenger in self.initial[PASSENGERS]:
+            d[passenger[NAME]] = idx
+        return d
+
+    # def add_change_prob(self, initial_state):
+    #     """add the probability of change to the initial state"""
+    #     for passenger in initial_state[PASSENGERS]:
+    #         passenger[PROBABILITY] = 1 / (len(passenger[POSSIBLE_DESTINATIONS]) - 1) * passenger[PROBABILITY]
+
+    def next(self, state, action):
+        """runs the given action form the given state and returns the new state"""
+        return self.apply(state, action)
+
+    def apply(self, state, action):
+        """
+        apply the action to the state
+        """
+        if action[0] == "reset":
+            return self.initial[0], self.initial[1], state[TURNS_TO_GO] - 1
+        state = (state[TAXIS], state[PASSENGERS], state[TURNS_TO_GO] - 1)
+        if action[0] == "terminate":
+            return None
+        for atomic_action in action:
+            next = self.apply_atomic_action(state, atomic_action)
+        return next
+
+    def state_to_tup(self, state):
+        """converts a state to a tuple"""
+        return tuple([tuple(tup) for tup in state[TAXIS]]), tuple([tuple(tup) for tup in state[PASSENGERS]]), state[
+            TURNS_TO_GO]
+
+    def apply_atomic_action(self, state, atomic_action):
+        """
+        apply an atomic action to the state
+        """
+        if atomic_action[0] == 'wait':
+            return state
+        old_state = state
+        state = [[list(tup) for tup in old_state[TAXIS]], [list(tup) for tup in old_state[PASSENGERS]],
+                 old_state[TURNS_TO_GO]]
+        taxi_name = atomic_action[1]
+        if atomic_action[0] == 'move':
+            state[TAXIS][self.tName2id[taxi_name]][LOC] = atomic_action[2]
+            state[TAXIS][self.tName2id[taxi_name]][FUEL] -= 1
+            return self.state_to_tup(state)
+        elif atomic_action[0] == 'pick up':
+            passenger_name = atomic_action[2]
+            state[TAXIS][self.tName2id[taxi_name]][CAP] -= 1
+            state[PASSENGERS][self.pName2id[passenger_name]][LOC] = taxi_name
+            return self.state_to_tup(state)
+        elif atomic_action[0] == 'drop off':
+            passenger_name = atomic_action[2]
+            state[PASSENGERS][self.pName2id[passenger_name]][LOC] = state[TAXIS][self.tName2id[taxi_name]][LOC]
+            state[TAXIS][self.tName2id[taxi_name]][CAP] += 1
+            return self.state_to_tup(state)
+        elif atomic_action[0] == 'refuel':
+            state[TAXIS][self.tName2id[taxi_name]][FUEL] = self.initial[TAXIS][self.tName2id[taxi_name]][FUEL]
+            return self.state_to_tup(state)
+        # else:
+        #     raise NotImplemented
+
+    def reward(self, state, action):
+        """
+        return the reward of performing the action in the state
+        """
+        if action == ('reset',):
+            return -RESET_PENALTY
+        if action == 'terminate':
+            return 0
+
+        reward = 0
+        for atomic_action in action:
+            if atomic_action == 'refuel':
+                reward -= REFUEL_PENALTY
+            if atomic_action[0] == 'drop off':
+                # passenger_name = atomic_action[2]
+                # if state[PASSENGERS][self.pName2id[passenger_name]][LOC] == \
+                #         state[PASSENGERS][self.pName2id[passenger_name]][DESTINATION]:
+                reward += DROP_IN_DESTINATION_REWARD
+        return reward
 
     def act(self, state):
-        raise NotImplemented
-
-    def is_action_legal(self, action):
         """
-        check if the action is legal
+        return the action to perform in the state
         """
+        state = self.init_to_tup(state)
+        action = self.policy[state]
+        return action if action != ("reset",) else "reset"
 
-        def _is_move_action_legal(move_action):
-            taxi_name = move_action[1]
-            if taxi_name not in self.state['taxis'].keys():
-                return False
-            if self.state['taxis'][taxi_name]['fuel'] == 0:
-                return False
-            l1 = self.state['taxis'][taxi_name]['location']
-            l2 = move_action[2]
-            return l2 in list(self.graph.neighbors(l1))
-
-        def _is_pick_up_action_legal(pick_up_action):
-            taxi_name = pick_up_action[1]
-            passenger_name = pick_up_action[2]
-            # check same position
-            if self.state['taxis'][taxi_name]['location'] != self.state['passengers'][passenger_name]['location']:
-                return False
-            # check taxi capacity
-            if self.state['taxis'][taxi_name]['capacity'] <= 0:
-                return False
-            # check passenger is not in his destination
-            if self.state['passengers'][passenger_name]['destination'] == self.state['passengers'][passenger_name][
-                'location']:
-                return False
-            return True
-
-        def _is_drop_action_legal(drop_action):
-            taxi_name = drop_action[1]
-            passenger_name = drop_action[2]
-            # check same position
-            if self.state['taxis'][taxi_name]['location'] != self.state['passengers'][passenger_name]['destination']:
-                return False
-            return True
-
-        def _is_refuel_action_legal(refuel_action):
-            """
-            check if taxi in gas location
-            """
-            taxi_name = refuel_action[1]
-            i, j = self.state['taxis'][taxi_name]['location']
-            if self.state['map'][i][j] == 'G':
-                return True
-            else:
-                return False
-
-        def _is_action_mutex(global_action):
-            assert type(global_action) == tuple, "global action must be a tuple"
-            # one action per taxi
-            if len(set([a[1] for a in global_action])) != len(global_action):
-                return True
-            # pick up the same person
-            pick_actions = [a for a in global_action if a[0] == 'pick up']
-            if len(pick_actions) > 1:
-                passengers_to_pick = set([a[2] for a in pick_actions])
-                if len(passengers_to_pick) != len(pick_actions):
-                    return True
-            return False
-
-        if action == "reset":
-            return True
-        if action == "terminate":
-            return True
-        if len(action) != len(self.state["taxis"].keys()):
-            logging.error(f"You had given {len(action)} atomic commands, while there are {len(self.state['taxis'])}"
-                          f" taxis in the problem!")
-            return False
-        for atomic_action in action:
-            # illegal move action
-            if atomic_action[0] == 'move':
-                if not _is_move_action_legal(atomic_action):
-                    logging.error(f"Move action {atomic_action} is illegal!")
-                    return False
-            # illegal pick action
-            elif atomic_action[0] == 'pick up':
-                if not _is_pick_up_action_legal(atomic_action):
-                    logging.error(f"Pick action {atomic_action} is illegal!")
-                    return False
-            # illegal drop action
-            elif atomic_action[0] == 'drop off':
-                if not _is_drop_action_legal(atomic_action):
-                    logging.error(f"Drop action {atomic_action} is illegal!")
-                    return False
-            # illegal refuel action
-            elif atomic_action[0] == 'refuel':
-                if not _is_refuel_action_legal(atomic_action):
-                    logging.error(f"Refuel action {atomic_action} is illegal!")
-                    return False
-            elif atomic_action[0] != 'wait':
-                return False
-        # check mutex action
-        if _is_action_mutex(action):
-            logging.error(f"Actions {action} are mutex!")
-            return False
-        # check taxis collision
-        if len(self.state['taxis']) > 1:
-            taxis_location_dict = dict([(t, self.state['taxis'][t]['location']) for t in self.state['taxis'].keys()])
-            move_actions = [a for a in action if a[0] == 'move']
-            for move_action in move_actions:
-                taxis_location_dict[move_action[1]] = move_action[2]
-            if len(set(taxis_location_dict.values())) != len(taxis_location_dict):
-                logging.error(f"Actions {action} cause collision!")
-                return False
-        return True
-
-    def all_actions(self):
+    def all_actions(self, state):
         """
         return all possible actions
         """
         all_actions = []
-        for taxi_name in self.state['taxis'].keys():
+        taxi_actions = {}
+        for taxi in state[TAXIS]:
+            taxi_actions[taxi[NAME]] = []
+            taxi_name = taxi[NAME]
             # move actions
-            for neighbor in self.graph.neighbors(self.state['taxis'][taxi_name]['location']):
-                all_actions.append(('move', taxi_name, neighbor))
+            if taxi[FUEL] > 0:
+                for neighbor in self.graph.neighbors(taxi[LOC]):
+                    taxi_actions[taxi_name].append(('move', taxi_name, neighbor))
             # pick up actions
-            for passenger_name in self.state['passengers'].keys():
-                if self.state['passengers'][passenger_name]['location'] == self.state['taxis'][taxi_name]['location']:
-                    all_actions.append(('pick up', taxi_name, passenger_name))
-            # drop off actions
-            for passenger_name in self.state['passengers'].keys():
-                if self.state['passengers'][passenger_name]['destination'] == self.state['taxis'][taxi_name]['location']:
-                    all_actions.append(('drop off', taxi_name, passenger_name))
+            for passenger in state[PASSENGERS]:
+                # passenger = state[PASSENGERS][self.pName2id[passenger_name]]
+                # passenger_name = passenger_name[NAME]
+                if passenger[LOC] == taxi[LOC] and taxi[CAP] > 0 and passenger[DESTINATION] != passenger[LOC]:
+                    taxi_actions[taxi_name].append(('pick up', taxi_name, passenger[NAME]))
+                # drop off actions
+                if passenger[LOC] == taxi_name and passenger[DESTINATION] == taxi[LOC]:
+                    taxi_actions[taxi_name].append(('drop off', taxi_name, passenger[NAME]))
             # refuel actions
-            i, j = self.state['taxis'][taxi_name]['location']
-            if self.state['map'][i][j] == 'G':
-                all_actions.append(('refuel', taxi_name))
+            i, j = state[TAXIS][self.tName2id[taxi_name]][LOC]
+            if self.map[i][j] == 'G':
+                taxi_actions[taxi_name].append(('refuel', taxi_name))
             # wait actions
-            all_actions.append(('wait', taxi_name))
+            taxi_actions[taxi_name].append(('wait', taxi_name))
         # reset action
-        all_actions.append('reset')
+        all_actions = list(itertools.product(*taxi_actions.values()))
+        if len(state[TAXIS]) > 1:
+            for action in all_actions:
+                for taxi_action in action:
+                    for taxi2_action in action:
+                        if (taxi_action[0] == 'move' and taxi2_action[0] == 'move' and taxi_action[2] == taxi2_action[
+                            2]) or \
+                                (taxi_action[0] == 'move' and taxi2_action[0] != 'move' and taxi_action[2] ==
+                                 state[TAXIS][self.tName2id[taxi2_action[1]]][LOC]):
+                            all_actions.remove(action)
+        all_actions.append(('reset',))
         # terminate action
-        all_actions.append('terminate')
+        # all_actions.append('terminate')
         return all_actions
+
+    def generate_all_states(self):
+        """uses all_actions to generate all possible states, kinda runs BFS"""
+        turns_to_go = self.state[TURNS_TO_GO] + 1
+        all_states = defaultdict(lambda: set())
+        all_states[0] = set((self.state,))
+        for i in (tq := tqdm(range(1, turns_to_go), leave=False)):
+            # diff = new_states.difference(old_states)
+            # old_states = new_states.copy()
+            count = 0
+            for state in all_states[i - 1]:
+                count += 1
+                for action in self.all_actions(state):
+                    new_state = self.next(state, action)
+                    all_states[i].update(self.split_across_MDP(new_state))
+            tq.set_description(f"Generating all states")
+        return all_states
+
+    def split_across_MDP(self, state):
+        """
+        split the state across MDPs
+        """
+        new_states = set()
+        if len(state[PASSENGERS]) > 1:
+            possible_goals = [state[PASSENGERS][self.pName2id[passenger_name]][POSSIBLE_DESTINATIONS] for passenger_name
+                              in
+                              [passenger[NAME] for passenger in state[PASSENGERS]]]
+
+            for goals in itertools.product(*possible_goals):
+                pass_list = list(list(passenger) for passenger in state[PASSENGERS])
+                for i, goal in enumerate(goals):
+                    pass_list[i][DESTINATION] = goal
+                new_state = (state[TAXIS], tuple(tuple(passenger) for passenger in pass_list), state[TURNS_TO_GO])
+                # _state = deepcopy(state)
+                # for goal, passenger in zip(goals, _state[PASSENGERS]):
+                #     passenger[DESTINATION] = goal
+                new_states.add(new_state)
+        else:
+            passenger = state[PASSENGERS][0]
+            for goal in passenger[POSSIBLE_DESTINATIONS]:
+                new_state = (state[TAXIS], (
+                (passenger[NAME], passenger[LOC], goal, passenger[POSSIBLE_DESTINATIONS], passenger[PROBABILITY]),),
+                             state[TURNS_TO_GO])
+                new_states.add(new_state)
+        return new_states
 
     def build_graph(self):
         """
         build the graph of the problem
         """
-        n, m = len(self.initial_state['map']), len(self.initial_state['map'][0])
+        n, m = len(self.map), len(self.map[0])
         g = nx.grid_graph((m, n))
         nodes_to_remove = []
         for node in g:
-            if self.initial_state['map'][node[0]][node[1]] == 'I':
+            if self.map[node[0]][node[1]] == 'I':
                 nodes_to_remove.append(node)
         for node in nodes_to_remove:
             g.remove_node(node)
         return g
 
+    def inner(self, state, action, new_state, old_values):
+        """returns the probability of the new state given the state and action"""
+        prob = 1
+        next_state = self.next(state, action)
+        for curr_passenger, new_passenger in zip(next_state[PASSENGERS], new_state[PASSENGERS]):
+            if curr_passenger[LOC] != new_passenger[LOC]:
+                prob *= curr_passenger[PROBABILITY]
+        return prob * old_values[new_state]
 
+    def expected_value(self, state, action, gamma, old_values):
+        """
+        return the expected value of the action in the state
+        """
+        next_states = self.split_across_MDP(self.next(state, action))
+        reward = self.reward(state, action)
+        ex = gamma * sum([self.inner(state, action, next_state, old_values)
+                                                         for next_state in next_states]) if state[
+                                                                                                TURNS_TO_GO] > 0 else 0
+        return reward + ex
+
+    def policy_iterations(self, max_iterations=200, gamma=0.9, epsilon=1e-21):
+        """
+        policy iteration algorithm
+        """
+        # initialize value function
+        all_state_list = self.generate_all_states()
+        best_action = {}
+        num = sum([len(list(all_state_list[i])) for i in range(max_iterations + 1)])
+        # values = dict([(s, 0) for s in all_state_list])
+        # values = defaultdict(lambda: 0)
+        values = dict([(s, 0) for i in range(max_iterations + 1) for s in all_state_list[i]])
+        # initialize policy
+        policy = dict(
+            [(s, random.choice(self.all_actions(s))) for i in range(max_iterations + 1) for s in all_state_list[i]])
+        # initialize iteration counter
+        counter = 0
+        # initialize delta
+        delta = float('inf')
+        for iter in (tq := tqdm(range(max_iterations), leave=True, position=0)):
+            if delta <= epsilon:
+                print("-------------- broke --------------")
+                break
+            delta = 0
+            old_values = values.copy()
+            for i in range(max_iterations + 1):
+                for state in all_state_list[i]:
+                    old_value = old_values[state]
+                    counter += 1
+                    for action in self.all_actions(state):
+                        expected = self.expected_value(state, action, gamma, old_values)
+                        if expected > values[state]:
+                            values[state] = expected
+                            policy[state] = action
+
+                    values[state] = self.expected_value(state, action, gamma, old_values)
+                    delta = max(delta, abs(old_value - values[state]))
+            tq.set_description(f"Value Iterations")
+
+        return policy
+
+    def value_iterations(self, gamma, epsilon, max_iterations=100):
+        """
+        value iteration algorithm, using dynamic programming
+        """
+        all_state_list = self.generate_all_states()
+        values = dict([(s, 0) for i in range(max_iterations + 1) for s in all_state_list[i]])
+        policy = dict(
+            [(s, random.choice(self.all_actions(s))) for i in range(max_iterations + 1) for s in all_state_list[i]])
+        delta = float('inf')
+        for iter in (tq := tqdm(range(max_iterations), leave=True, position=0)):
+            delta = 0
+            old_values = values.copy()
+            for i in range(max_iterations + 1):
+                for state in all_state_list[i]:
+                    old_value = old_values[state]
+                    action_values = [self.expected_value(state, a, gamma, old_values) for a in self.all_actions(state)]
+                    values[state] = max(action_values)
+                    policy[state] = self.all_actions(state)[np.argmax(action_values)]
+                    delta = max(delta, abs(old_value - values[state]))
+        return policy
 class TaxiAgent:
     def __init__(self, initial):
         self.initial = initial
