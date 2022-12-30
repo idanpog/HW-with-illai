@@ -6,6 +6,7 @@
   <component name="ChangeListManager">
     <list default="true" id="451aae89-2c5a-48a0-9d61-94dcaf865295" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/HW2/check.py" beforeDir="false" afterPath="$PROJECT_DIR$/HW2/check.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/HW2/ex2.py" beforeDir="false" afterPath="$PROJECT_DIR$/HW2/ex2.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/HW2/inputs.py" beforeDir="false" afterPath="$PROJECT_DIR$/HW2/inputs.py" afterDir="false" />
     </list>
@@ -25,21 +26,21 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "RunOnceActivity.OpenProjectViewOnStart": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "SHARE_PROJECT_CONFIGURATION_FILES": "true",
-    "WebServerToolWindowFactoryState": "false",
-    "codeWithMe.voiceChat.enabledByDefault": "false",
-    "last_opened_file_path": "C:/Technion/Semester 5/Resilio with Ilai/HW-with-illai/AI applications",
-    "node.js.detected.package.eslint": "true",
-    "node.js.detected.package.tslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "node.js.selected.package.tslint": "(autodetect)",
-    "vue.rearranger.settings.migration": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
+    &quot;WebServerToolWindowFactoryState&quot;: &quot;false&quot;,
+    &quot;codeWithMe.voiceChat.enabledByDefault&quot;: &quot;false&quot;,
+    &quot;last_opened_file_path&quot;: &quot;C:/Technion/Semester 5/Resilio with Ilai/HW-with-illai/AI applications&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
-}]]></component>
+}</component>
   <component name="RunManager" selected="Python.check">
     <configuration name="check" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="AI applications" />
@@ -110,8 +111,8 @@
     <recent_temporary>
       <list>
         <item itemvalue="Python.check" />
-        <item itemvalue="Python.inputs" />
         <item itemvalue="Python.ex2" />
+        <item itemvalue="Python.inputs" />
       </list>
     </recent_temporary>
   </component>
@@ -123,7 +124,8 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1672060342609</updated>
-      <workItem from="1672060344029" duration="68325000" />
+      <workItem from="1672060344029" duration="76490000" />
+      <workItem from="1672406834168" duration="4778000" />
     </task>
     <servers />
   </component>
@@ -145,20 +147,15 @@
         </line-breakpoint>
         <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
           <url>file://$PROJECT_DIR$/HW2/ex2.py</url>
-          <line>373</line>
-          <option name="timeStamp" value="82" />
-        </line-breakpoint>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/HW2/ex2.py</url>
-          <line>216</line>
-          <option name="timeStamp" value="83" />
+          <line>269</line>
+          <option name="timeStamp" value="132" />
         </line-breakpoint>
       </breakpoints>
     </breakpoint-manager>
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
-    <SUITE FILE_PATH="coverage/AI_applications$inputs.coverage" NAME="inputs Coverage Results" MODIFIED="1672231896958" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/HW2" />
-    <SUITE FILE_PATH="coverage/AI_applications$check.coverage" NAME="check Coverage Results" MODIFIED="1672244428468" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/HW2" />
-    <SUITE FILE_PATH="coverage/AI_applications$ex2.coverage" NAME="ex2 Coverage Results" MODIFIED="1672169927189" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/HW2" />
+    <SUITE FILE_PATH="coverage/AI_applications$inputs.coverage" NAME="inputs Coverage Results" MODIFIED="1672251983819" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/HW2" />
+    <SUITE FILE_PATH="coverage/AI_applications$check.coverage" NAME="check Coverage Results" MODIFIED="1672410726009" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/HW2" />
+    <SUITE FILE_PATH="coverage/AI_applications$ex2.coverage" NAME="ex2 Coverage Results" MODIFIED="1672407423745" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/HW2" />
   </component>
 </project>

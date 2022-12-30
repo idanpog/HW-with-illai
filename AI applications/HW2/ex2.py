@@ -36,14 +36,52 @@ PROBABILITY = 4
 TURNS_TO_GO = 2
 
 
+def init_to_tup(initial):
+    """converts the initial state to a tuple"""
+    taxis = initial["taxis"]
+    passengers = initial["passengers"]
+    passengers_tups = tuple([(passenger, passengers[passenger]["location"],
+                              passengers[passenger]["destination"], passengers[passenger]['possible_goals'],
+                              ((len(passengers[passenger]['possible_goals']) - 1) / (
+                                  len(passengers[passenger]['possible_goals'])) *
+                               passengers[passenger]['prob_change_goal'])) for passenger in passengers])
+    taxis_tups = tuple([(taxi, taxis[taxi]["location"], taxis[taxi]["fuel"], taxis[taxi]["capacity"])
+                        for taxi in taxis])
+    initial = (taxis_tups, passengers_tups, initial["turns to go"])
+    return initial
+
+def passenger_name_to_id(initial):
+    d = {}
+    for idx, passenger in enumerate(initial[PASSENGERS]):
+        d[passenger[NAME]] = idx
+    return d
+
+def taxi_name_to_id(initial):
+    d = {}
+    for idx, taxi in enumerate(initial[TAXIS]):
+        d[taxi[NAME]] = idx
+    return d
+def build_graph(map):
+    """
+    build the graph of the problem
+    """
+    n, m = len(map), len(map[0])
+    g = nx.grid_graph((m, n))
+    nodes_to_remove = []
+    for node in g:
+        if map[node[0]][node[1]] == 'I':
+            nodes_to_remove.append(node)
+    for node in nodes_to_remove:
+        g.remove_node(node)
+    return g
 class OptimalTaxiAgent:
     def __init__(self, initial):
         self.map = initial["map"]
-        self.initial = self.init_to_tup(initial)
-        self.tName2id = self.taxi_name_to_id()
-        self.pName2id = self.passenger_name_to_id()
+        self.initial = init_to_tup(initial)
+        self.tName2id = taxi_name_to_id(self.initial)
+        self.pName2id = passenger_name_to_id(self.initial)
         # self.add_change_prob(self.initial)
-        self.graph = self.build_graph()
+        self.graph = build_graph(self.map)
         self.state = self.initial
         self.all_actions_dict = dict()
         self.next_dict = dict()
@@ -53,31 +91,17 @@ class OptimalTaxiAgent:
         self.policy = self.value_iterations()
         # print(f"the expected value is {self.policy[self.initial]}")
 
-    def init_to_tup(self, initial):
-        """converts the initial state to a tuple"""
-        taxis = initial["taxis"]
-        passengers = initial["passengers"]
-        passengers_tups = tuple([(passenger, passengers[passenger]["location"],
-                                  passengers[passenger]["destination"], passengers[passenger]['possible_goals'],
-                                  ((len(passengers[passenger]['possible_goals']) - 1) / (
-                                      len(passengers[passenger]['possible_goals'])) *
-                                   passengers[passenger]['prob_change_goal'])) for passenger in passengers])
-        taxis_tups = tuple([(taxi, taxis[taxi]["location"], taxis[taxi]["fuel"], taxis[taxi]["capacity"])
-                            for taxi in taxis])
-        initial = (taxis_tups, passengers_tups, initial["turns to go"])
-        return initial
+
 
     def taxi_name_to_id(self):
         d = {}
-        idx = 0
-        for taxi in self.initial[TAXIS]:
+        for idx, taxi in enumerate(self.initial[TAXIS]):
             d[taxi[NAME]] = idx
         return d
 
     def passenger_name_to_id(self):
         d = {}
-        idx = 0
-        for passenger in self.initial[PASSENGERS]:
+        for idx, passenger in enumerate(self.initial[PASSENGERS]):
             d[passenger[NAME]] = idx
         return d
 
@@ -96,11 +120,11 @@ class OptimalTaxiAgent:
         """
         if action[0] == "reset":
             return self.initial[0], self.initial[1], state[TURNS_TO_GO] - 1
-        state = (state[TAXIS], state[PASSENGERS], state[TURNS_TO_GO] - 1)
+        next = (state[TAXIS], state[PASSENGERS], state[TURNS_TO_GO] - 1)
         if action[0] == "terminate":
             return None
         for atomic_action in action:
-            next = self.apply_atomic_action(state, atomic_action)
+            next = self.apply_atomic_action(next, atomic_action)
         return next
 
     def state_to_tup(self, state):
@@ -162,7 +186,7 @@ class OptimalTaxiAgent:
         """
         return the action to perform in the state
         """
-        state = self.init_to_tup(state)
+        state = init_to_tup(state)
         action = self.policy[state]
         return action if action != ("reset",) else "reset"
 
@@ -170,6 +194,23 @@ class OptimalTaxiAgent:
         if state not in self.all_actions_dict:
             self.all_actions_dict[state] = self.all_actions_aux(state)
         return self.all_actions_dict[state]
+
+    def extract_locations(self, action, state):
+        """extract the taxi locations from an action"""
+        locations = []
+        for atomic_action in action:
+            if atomic_action[0] == 'move':
+                locations.append(atomic_action[2])
+            else:
+                locations.append(state[TAXIS][self.tName2id[atomic_action[1]]][LOC])
+        return locations
+    def clean_collisions(self, actions, state):
+        """
+        remove collisions from the actions
+        """
+        new_actions = [action for action in actions if len(self.extract_locations(action, state)) == len(set(self.extract_locations(action, state)))]
+
+        return new_actions
 
     def all_actions_aux(self, state):
         """
@@ -202,18 +243,31 @@ class OptimalTaxiAgent:
         # reset action
         all_actions = list(itertools.product(*taxi_actions.values()))
         if len(state[TAXIS]) > 1:
-            for action in all_actions:
-                for taxi_action in action:
-                    for taxi2_action in action:
-                        if taxi_action[1] != taxi2_action[1]:
-                            if (taxi_action[0] == 'move' and taxi2_action[0] == 'move' and taxi_action[2] == taxi2_action[
-                                2]) or \
-                                    (taxi_action[0] == 'move' and taxi2_action[0] != 'move' and taxi_action[2] ==
-                                     state[TAXIS][self.tName2id[taxi2_action[1]]][LOC]):
-                                all_actions.remove(action)
+            all_actions = self.clean_collisions(all_actions, state)
+        if (('move', 'taxi 1', (2, 2)), ('wait', 'taxi 2')) in all_actions and state[TAXIS][1][LOC] == (2, 2):
+            print("something's weird")
+            # if (('move', 'taxi 1', (2, 2)), ('wait', 'taxi 2')) in all_actions and state[TAXIS][1][LOC] == (2, 2):
+            #     x = 1
+            # for action in all_actions:
+            #     flag = False
+            #     for taxi_action in action:
+            #         if flag:
+            #             break
+            #         for taxi2_action in action:
+            #             if taxi_action[1] != taxi2_action[1]:
+            #                 if (taxi_action[0] == 'move' and taxi2_action[0] == 'move' and taxi_action[2] == taxi2_action[
+            #                     2]) or \
+            #                         (taxi_action[0] == 'move' and taxi2_action[0] != 'move' and taxi_action[2] ==
+            #                          state[TAXIS][self.tName2id[taxi2_action[1]]][LOC]):
+            #                     all_actions.remove(action)
+            #                     flag = True
+            #                     break
+
         all_actions.append(('reset',))
         # terminate action
         # all_actions.append('terminate')
+        if (('move', 'taxi 1', (2, 2)), ('wait', 'taxi 2')) in all_actions and state[TAXIS][1][LOC] == (2, 2):
+            print("something's weird")
         return all_actions
 
     def generate_all_states(self):
@@ -240,6 +294,10 @@ class OptimalTaxiAgent:
                         self.all_actions_dict[state][action] = list(all_new_states)
             tq.set_description(f"Generating all states")
         return all_states
+
+    # action = (('move', 'taxi 1', (1,0)), ('move', 'taxi 2', (0,0)))
+
+    # ((('taxi 1', (1, 0), 2, 1), ('taxi 2', (0, 0), 2, 1)), (('Dana', (0, 2), (2, 2), ((2, 2),), 0.0), ('Dan', (2, 0), (2, 2), ((2, 2),), 0.0)), 99)
 
     def split_across_MDP(self, state):
         """
@@ -376,7 +434,32 @@ class OptimalTaxiAgent:
 
 class TaxiAgent:
     def __init__(self, initial):
-        self.initial = initial
+        self.map = initial["map"]
+        self.initial = init_to_tup(initial)
+        self.tName2id = taxi_name_to_id(self.initial)
+        self.pName2id = passenger_name_to_id(self.initial)
+        # self.add_change_prob(self.initial)
+        self.graph = build_graph(self.map)
+        self.state = self.initial
+
+    def associate_passenger(self):
+        """
+        associate the passengers with the taxis
+        """
+        def _generate_possible_assignments():
+            """
+            generate all possible assignments
+            """
+            taxi2passenger = {}
+            for taxi in self.state[TAXIS]:
+                for passenger in self.state[PASSENGERS]:
+                    yield (taxi, passenger)
 
     def act(self, state):
         raise NotImplemented
+
+    def initial_MDP(self, state):
+        """
+        return the initial MDP
+        """
+        pass

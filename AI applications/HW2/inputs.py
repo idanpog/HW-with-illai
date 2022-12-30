@@ -38,7 +38,7 @@ small_inputs = [
     },
     # 3x4 1 taxi, 1 passenger w/ 2 possible goals, low fuel
     {
-        "optimal": True,
+        "optimal": False,
         "map": [['P', 'P', 'P', 'P'],
                 ['I', 'I', 'I', 'G'],
                 ['P', 'P', 'P', 'P']],
@@ -49,7 +49,7 @@ small_inputs = [
     },
     # 4x4 2 taxi, 1 passenger w/ 2 possible goals, no gas station
     {
-        "optimal": True,
+        "optimal": False,
         "map": [['P', 'P', 'P', 'P'],
                 ['I', 'I', 'I', 'P'],
                 ['I', 'I', 'I', 'P'],

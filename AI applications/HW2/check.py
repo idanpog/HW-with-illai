@@ -275,12 +275,12 @@ def main():
             my_problem.run_round()
         except EndOfGame:
             continue
-    for an_input in additional_inputs:
-        try:
-            my_problem = TaxiStochasticProblem(an_input)
-            my_problem.run_round()
-        except EndOfGame:
-            continue
+    # for an_input in additional_inputs:
+    #     try:
+    #         my_problem = TaxiStochasticProblem(an_input)
+    #         my_problem.run_round()
+    #     except EndOfGame:
+    #         continue
 
 
 if __name__ == '__main__':
