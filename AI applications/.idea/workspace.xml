@@ -6,9 +6,9 @@
   <component name="ChangeListManager">
     <list default="true" id="451aae89-2c5a-48a0-9d61-94dcaf865295" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/HW2/additional_inputs.py" beforeDir="false" afterPath="$PROJECT_DIR$/HW2/additional_inputs.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/HW2/check.py" beforeDir="false" afterPath="$PROJECT_DIR$/HW2/check.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/HW2/ex2.py" beforeDir="false" afterPath="$PROJECT_DIR$/HW2/ex2.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/HW2/inputs.py" beforeDir="false" afterPath="$PROJECT_DIR$/HW2/inputs.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -125,12 +125,23 @@
       <option name="presentableId" value="Default" />
       <updated>1672060342609</updated>
       <workItem from="1672060344029" duration="76490000" />
-      <workItem from="1672406834168" duration="4778000" />
+      <workItem from="1672406834168" duration="18607000" />
     </task>
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
@@ -150,12 +161,22 @@
           <line>269</line>
           <option name="timeStamp" value="132" />
         </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/HW2/ex2idans.py</url>
+          <line>75</line>
+          <option name="timeStamp" value="139" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/HW2/ex2idans.py</url>
+          <line>483</line>
+          <option name="timeStamp" value="140" />
+        </line-breakpoint>
       </breakpoints>
     </breakpoint-manager>
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/AI_applications$inputs.coverage" NAME="inputs Coverage Results" MODIFIED="1672251983819" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/HW2" />
-    <SUITE FILE_PATH="coverage/AI_applications$check.coverage" NAME="check Coverage Results" MODIFIED="1672410726009" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/HW2" />
+    <SUITE FILE_PATH="coverage/AI_applications$check.coverage" NAME="check Coverage Results" MODIFIED="1672493595156" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/HW2" />
     <SUITE FILE_PATH="coverage/AI_applications$ex2.coverage" NAME="ex2 Coverage Results" MODIFIED="1672407423745" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="true" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/HW2" />
   </component>
 </project>

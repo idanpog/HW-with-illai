@@ -1,8 +1,8 @@
 import random
 import networkx as nx
 
-from ex2 import TaxiAgent, ids, OptimalTaxiAgent
-from additional_inputs import additional_inputs
+from ex2idans import TaxiAgent, ids, OptimalTaxiAgent
+from additional_inputs import additional_inputs, my_check
 from inputs import small_inputs
 import logging
 import time
@@ -269,7 +269,13 @@ def main():
     main function
     """
     print(f"IDS: {ids}")
-    for an_input in small_inputs:
+    # for an_input in small_inputs:
+    #     try:
+    #         my_problem = TaxiStochasticProblem(an_input)
+    #         my_problem.run_round()
+    #     except EndOfGame:
+    #         continue
+    for an_input in my_check:
         try:
             my_problem = TaxiStochasticProblem(an_input)
             my_problem.run_round()

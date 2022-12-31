@@ -35,7 +35,6 @@ PROBABILITY = 4
 
 TURNS_TO_GO = 2
 
-
 def init_to_tup(initial):
     """converts the initial state to a tuple"""
     taxis = initial["taxis"]
@@ -61,6 +60,7 @@ def taxi_name_to_id(initial):
     for idx, taxi in enumerate(initial[TAXIS]):
         d[taxi[NAME]] = idx
     return d
+
 def build_graph(map):
     """
     build the graph of the problem
@@ -74,6 +74,7 @@ def build_graph(map):
     for node in nodes_to_remove:
         g.remove_node(node)
     return g
+
 class OptimalTaxiAgent:
     def __init__(self, initial):
         self.map = initial["map"]
@@ -282,14 +283,11 @@ class OptimalTaxiAgent:
             for state in all_states[i - 1]:
                 self.all_actions_dict[state] = {}
                 self.next_dict[state] = {}
-                # count += 1
+                count += 1
                 for action in self.all_actions_aux(state):
-                    print("in")
                     new_state = self.next(state, action)
                     self.next_dict[state][action] = new_state
                     all_new_states = self.split_across_MDP(new_state)
-                    count += len(all_new_states)
-                    print(count)
                     all_states[i].update(all_new_states)
                     if action in self.all_actions_dict[state]:
                         self.all_actions_dict[state][action].append(list(all_new_states))
@@ -444,11 +442,87 @@ class TaxiAgent:
         # self.add_change_prob(self.initial)
         self.graph = build_graph(self.map)
         self.state = self.initial
+        self.shortest_paths_len = dict(nx.all_pairs_shortest_path_length(self.graph))
+        self.shortest_paths = dict(nx.all_pairs_shortest_path(self.graph))
+        self.assignments = self.associate_passengers()
+        self.sub_maps = self.get_sub_graphs(self.map, self.assignments)
+        agents = [TaxiAgent
+
+    def get_sub_graphs(self, map, graph, assignments):
+        """creates a sub map for each pair of taxi and passenger which includes
+        the shortest paths between the taxi, the nearest gas station, the passenger and a chosen destination"""
+        def _path_len(taxi, passenger, pair):
+            """spits out the shortest possible path length that allows the taxi to pickup and deliver the passenger
+            attempts:
+            1. taxi -> passenger -> gas station -> destination
+            2. taxi -> gas station -> passenger -> destination
+            3. taxi -> gas station -> passenger -> gas station -> destination"""
+            dest, gas = pair
+            ploc, tloc = passenger[LOC], taxi[LOC]
+            fuel = taxi[FUEL]
+            cap = self.initial[TAXIS][self.tName2id[taxi[NAME]]][FUEL]
+            options = [float("inf")]
+            # if pick up and then refuel
+            if self.d(tloc, ploc) + self.d(ploc, gas) <= fuel:
+                options.append(self.d(tloc, ploc) + self.d(passenger, gas) + self.d(gas, dest))
+            # else refuel then pick up
+            # if dest right after the pickup
+            elif self.d(tloc, gas) <=FUEL:
+                if self.d(gas, ploc) + self.d(ploc, dest) <= cap:
+                    options.append(self.d(tloc, gas) + self.d(gas, ploc)+ self.d(ploc, dest))
+                # in this case we need to refuel before and after the pickup
+                elif self.d(gas, ploc) + self.d(ploc, gas) <= cap and self.d(gas, dest) <= cap:
+                    options.append(self.d(tloc, gas) + self.d(gas, ploc) + self.d(ploc, gas) + self.d(gas, dest))
+            return min(options)
+
+        def _choose_gas_and_dest(map, graph, taxi, passenger):
+            """chooses the gas station and destination for the sub map
+            first checks if there's a possibility to get the passenger to a destination without refueling
+            otherwise, finds the gas stations that allows the taxi to get to the passenger and the destination
+            with minimal steps"""
+            # attempt to avoid gas stations
+            d_without_fuel = lambda dest: self.d(taxi[LOC], passenger[LOC]) + self.d(passenger[LOC], dest)
+            destination = min(passenger[POSSIBLE_DESTINATIONS], key=d_without_fuel)
+            if d_without_fuel(destination) <= taxi[FUEL]:
+                return destination, destination
+
+            # choose best pair of gas station and destination
+            gas_stations = [(i, j) for i in range(len(map)) for j in range(len(map[0])) if map[i][j] == "G"]
+            dest_gas_pairs = [(dest, gas) for dest in passenger[POSSIBLE_DESTINATIONS] for gas in gas_stations]
+            pair = min(dest_gas_pairs, key=lambda pair : _path_len(taxi, passenger, pair))
+            return pair
+
+        def _nodes_to_keep(map, graph, taxi, passenger):
+            """returns the nodes to keep while building a subgraph that contains the shortest paths"""
+            nodes_to_keep = set()
+            shortest_path_pairs = []
+            dest_loc, gas_loc = _choose_gas_and_dest(map, graph, taxi, passenger)
+            shortest_path_pairs.append((taxi[LOC], passenger[LOC]))
+            shortest_path_pairs.append((passenger[LOC], gas_loc))
+            shortest_path_pairs.append((taxi[LOC], gas_loc))
+            shortest_path_pairs.append((gas_loc, dest_loc))
+            shortest_path_pairs.append((passenger[LOC], dest_loc))
+            for pair in shortest_path_pairs:
+                nodes_to_keep.update(self.shortest_paths[pair[0]][pair[1]])
+            return nodes_to_keep
+
+        sub_maps = {}
+        for taxi_name, passenger_name in assignments:
+            taxi = self.state[TAXIS][self.tName2id[taxi_name]]
+            passenger = self.state[PASSENGERS][self.pName2id[passenger_name]]
+            nodes_to_keep = _nodes_to_keep(graph, taxi, passenger)
+            sub_map = graph.subgraph(nodes_to_keep)
+            sub_maps[(taxi, passenger)] = sub_map
+
+        return sub_maps
+
     def d(self, loc1, loc2):
-        if (loc1, loc2) not in self.distances_dict:
-            self.distances_dict[(loc1, loc2)] = nx.shortest_path_length(self.graph, loc1, loc2)
-        return self.distances_dict[(loc1, loc2)]
-    def associate_passenger(self):
+        if loc1 in self.shortest_paths_len and loc2 in self.shortest_paths_len[loc1]:
+            return self.shortest_paths_len[loc1][loc2]
+        else:
+            return np.inf
+
+    def associate_passengers(self):
         """
         associate the passengers with the taxis
         """
@@ -467,6 +541,7 @@ class TaxiAgent:
             return unique_combinations
         def _evaluate_assignment(assignment):
             """
+            ignores fuel
             gives a score to the assignment based on the max distance between a pair of a taxi and a passenger
             smaller is better
             """
@@ -477,6 +552,18 @@ class TaxiAgent:
                 score = max(score, self.d(taxi[LOC], passenger[LOC]))
             return score
 
+        possible_assignments = _generate_possible_assignments()
+        best_assignment = min(possible_assignments, key=_evaluate_assignment)
+        return best_assignment
+
+    def act_per_sub_graph(self, passenger, taxi, graph):
+        """
+        act for a single taxi
+        if taxi carries a passenger and reached the passenger location, drop off and wait till he changes loc
+        if taxi doesn't have a dedicated passenger, wait
+        if taxi has a dedicated passenger, go towards the passenger
+        """
+
 
     def act(self, state):
         raise NotImplemented
@@ -485,4 +572,4 @@ class TaxiAgent:
         """
         return the initial MDP
         """
-
+        pass

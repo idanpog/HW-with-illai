@@ -212,3 +212,33 @@ additional_inputs = [
                        }
     },
 ]
+
+
+my_check = [{
+        'optimal': True,
+        "turns to go": 200,
+        'map': [['P', 'P', 'P', 'I', 'P', 'P', 'P'],
+                ['P', 'I', 'P', 'P', 'P', 'P', 'I'],
+                ['P', 'P', 'I', 'P', 'P', 'I', 'P'],
+                ['P', 'G', 'P', 'I', 'P', 'G', 'P'],
+                ['P', 'P', 'P', 'P', 'P', 'I', 'P'],
+                ['P', 'P', 'G', 'I', 'P', 'P', 'P']],
+        'taxis': {'taxi 1': {'location': (4, 0), 'fuel': 20, 'capacity': 2},
+                  'taxi 2': {'location': (4, 3), 'fuel': 10, 'capacity': 3}},
+        'passengers': {'Dana': {'location': (2, 6), 'destination': (4, 2),
+                                'possible_goals': ((4, 2), (3, 1), (2, 4)), 'prob_change_goal': 0.2},
+                       'Uri': {'location': (3, 5), 'destination': (1, 4),
+                               'possible_goals': ((1, 4), (1, 2), (1, 3)), 'prob_change_goal': 0.2},
+                       'Ali': {'location': (1, 2), 'destination': (1, 3),
+                               'possible_goals': ((1, 3), (3, 5), (1, 2)), 'prob_change_goal': 0.2},
+                       'Daniel': {'location': (1, 3), 'destination': (3, 4),
+                                  'possible_goals': ((3, 4),), 'prob_change_goal': 0.2},
+                       'Wolfgang': {'location': (3, 1), 'destination': (3, 6),
+                                    'possible_goals': ((3, 6), (2, 6), (3, 5)), 'prob_change_goal': 0.2},
+                       'Noa': {'location': (2, 4), 'destination': (3, 6),
+                               'possible_goals': ((3, 6), (4, 3), (2, 6), (3, 5)), 'prob_change_goal': 0.2},
+                       'Ayelet': {'location': (1, 2), 'destination': (0, 4),
+                                  'possible_goals': ((0, 4), (2, 4)), 'prob_change_goal': 0.2},
+                       'Khaled': {'location': (5, 1), 'destination': (3, 6),
+                                  'possible_goals': ((3, 6), (1, 2), (5, 1)), 'prob_change_goal': 0.2}},
+    }]
