@@ -459,7 +459,7 @@ class TaxiAgent:
             thingy = {}
             thingy["passengers"] = {passenger: self.initial_dict["passengers"][passenger]}
             thingy["taxis"] = {taxi: self.initial_dict["taxis"][taxi]}
-            thingy["turns_to_go"] = self.initial_dict['turns to go']
+            thingy["turns to go"] = self.initial_dict['turns to go']
             thingy['graph'] = sub_graphs[(taxi, passenger)]
             sub_agents[(taxi, passenger)] = OptimalTaxiAgent(thingy)
         return sub_agents
@@ -529,7 +529,7 @@ class TaxiAgent:
             passenger = self.state[PASSENGERS][self.pName2id[passenger_name]]
             nodes_to_keep = _nodes_to_keep(map, graph, taxi, passenger)
             sub_map = graph.subgraph(nodes_to_keep)
-            sub_maps[(taxi, passenger)] = sub_map
+            sub_maps[(taxi_name, passenger_name)] = sub_map
 
         return sub_maps
 
@@ -600,9 +600,10 @@ class TaxiAgent:
             sub_state = {}
             sub_state["passengers"] = {passenger: state["passengers"][passenger]}
             sub_state["taxis"] = {taxi: state["taxis"][taxi]}
-            sub_state["turns_to_go"] = state["turns_to_go"]
+            sub_state["turns to go"] = state["turns to go"]
             sub_state['graph'] = self.sub_graphs[(taxi, passenger)]
-            action = self.sub_agents[(taxi, passenger)].act(sub_state)[0]
+            action = self.sub_agents[(taxi, passenger)].act(sub_state)
+            action = action[0] if action != 'reset' else action
             actions.append(action)
         resolved_actions = []
         locations = set()
@@ -613,4 +614,4 @@ class TaxiAgent:
                 resolved_actions.append(atomic_action)
             else:
                 resolved_actions.append(('wait', taxi))
-        return resolved_actions
+        return tuple(resolved_actions)
