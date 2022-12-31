@@ -242,3 +242,5 @@ my_check = [{
                        'Khaled': {'location': (5, 1), 'destination': (3, 6),
                                   'possible_goals': ((3, 6), (1, 2), (5, 1)), 'prob_change_goal': 0.2}},
     }]
+
+#additional_inputs = additional_inputs[6::]

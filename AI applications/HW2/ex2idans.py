@@ -96,7 +96,7 @@ class OptimalTaxiAgent:
         self.inner_prob_dict = dict()
         # self.policy = self.policy_iterations(max_iterations=self.initial[TURNS_TO_GO])
 
-        self.policy = self.value_iterations()
+        self.policy = self.value_iterations(max_iterations=self.initial[TURNS_TO_GO])
         # print(f"the expected value is {self.policy[self.initial]}")
 
     def taxi_name_to_id(self):
@@ -278,7 +278,7 @@ class OptimalTaxiAgent:
         turns_to_go = self.state[TURNS_TO_GO] + 1
         all_states = defaultdict(lambda: set())
         all_states[0] = set((self.state,))
-        for i in (tq := tqdm(range(1, turns_to_go + 1), leave=False)):
+        for i in range(1, turns_to_go + 1):
             # diff = new_states.difference(old_states)
             # old_states = new_states.copy()
             count = 0
@@ -295,7 +295,6 @@ class OptimalTaxiAgent:
                         self.all_actions_dict[state][action].append(list(all_new_states))
                     else:
                         self.all_actions_dict[state][action] = list(all_new_states)
-            tq.set_description(f"Generating all states")
         return all_states
 
     # action = (('move', 'taxi 1', (1,0)), ('move', 'taxi 2', (0,0)))
@@ -430,8 +429,8 @@ class OptimalTaxiAgent:
                 values[state] = max(action_values)
                 policy[state] = actions[np.argmax(action_values)]
         end = time()
-        print("Time taken: ", end - start)
-        print(f"{values[list(all_state_list[0])[0]]=}")
+        #print("Time taken: ", end - start)
+        #print(f"{values[list(all_state_list[0])[0]]=}")
         return policy
 
 
@@ -448,8 +447,10 @@ class TaxiAgent:
         self.shortest_paths_len = dict(nx.all_pairs_shortest_path_length(self.graph))
         self.shortest_paths = dict(nx.all_pairs_shortest_path(self.graph))
         self.assignments = self.associate_passengers()
-        self.sub_graphs = self.get_sub_graphs(self.map, self.graph,self.assignments)
+        self.sub_graphs = self.get_sub_graphs(self.map, self.graph, self.assignments)
         self.sub_agents = self.initiate_sub_agents(self.sub_graphs, self.assignments)
+        self.active = [assignment[0] for assignment in self.assignments]
+        self.passive = [taxi for taxi in self.initial_dict['taxis'].keys() if taxi not in self.active]
 
     def initiate_sub_agents(self, sub_graphs, assignments):
         """returns a dict that holds the sub agents as values and the tuples (taxi_name, passenger_name)
@@ -506,7 +507,9 @@ class TaxiAgent:
             # choose best pair of gas station and destination
             gas_stations = [(i, j) for i in range(len(map)) for j in range(len(map[0])) if map[i][j] == "G"]
             dest_gas_pairs = [(dest, gas) for dest in passenger[POSSIBLE_DESTINATIONS] for gas in gas_stations]
-            pair = min(dest_gas_pairs, key=lambda pair: _path_len(taxi, passenger, pair))
+            if len(dest_gas_pairs) <10:
+                return min(dest_gas_pairs, key=lambda pair: _path_len(taxi, passenger, pair))
+            pair = random.choice((sorted(dest_gas_pairs, key=lambda pair: _path_len(taxi, passenger, pair)[:10:])))
             return pair
 
         def _nodes_to_keep(map, graph, taxi, passenger):
@@ -520,7 +523,8 @@ class TaxiAgent:
             shortest_path_pairs.append((gas_loc, dest_loc))
             shortest_path_pairs.append((passenger[LOC], dest_loc))
             for pair in shortest_path_pairs:
-                nodes_to_keep.update(self.shortest_paths[pair[0]][pair[1]])
+                if pair[0] in self.shortest_paths and pair[1] in self.shortest_paths[pair[0]]:
+                    nodes_to_keep.update(self.shortest_paths[pair[0]][pair[1]])
             return nodes_to_keep
 
         sub_maps = {}
@@ -549,16 +553,29 @@ class TaxiAgent:
             """
             generate all possible assignments
             pairs of taxi and passenger names
+            returns a tuple of tuples of tuples
+            (((tname),(pname)..), ((),(),..), ..)
             """
             taxi_names = list(self.tName2id.keys())
             passenger_names = list(self.pName2id.keys())
-            unique_combinations = []
-            permute = itertools.permutations(taxi_names, len(passenger_names))
-            for comb in permute:
-                zipped = zip(comb, passenger_names)
-                unique_combinations.append(list(zipped))
-
-            return unique_combinations
+            valid_assignments = set()
+            permutations = list(itertools.permutations(passenger_names))
+            # unique_combinations = []
+            # permute = itertools.permutations(taxi_names, min(len(passenger_names), len(taxi_names)))
+            # for comb in permute:
+            #     zipped = zip(comb, passenger_names)
+            #     unique_combinations.append(list(zipped))
+            # num_premutations = (len(self.initial[TAXIS]) * len(self.initial[PASSENGERS])) ** 3
+            # permute = itertools.permutations(taxi_names, min(len(passenger_names), len(taxi_names)))
+            for permutation in permutations:
+                # for comb in permute:
+                #     zipped = zip(comb, passenger_names)
+                #     unique_combinations.append(list(zipped))
+                # for comb in unique_combinations:
+                #     valid_assignments.add(tuple(comb))
+                valid_assignments.add(tuple(zip(taxi_names, permutation)))
+            # unique_combinations = [(tname, pname) for pname in passenger_names for tname in taxi_names]
+            return tuple(valid_assignments)
 
         def _evaluate_assignment(assignment):
             """
@@ -584,6 +601,7 @@ class TaxiAgent:
         if taxi doesn't have a dedicated passenger, wait
         if taxi has a dedicated passenger, go towards the passenger
         """
+
     def extract_locations(self, action, state):
         """extract the taxi locations from an action"""
         locations = []
@@ -593,25 +611,64 @@ class TaxiAgent:
             else:
                 locations.append(state[TAXIS][self.tName2id[atomic_action[1]]][LOC])
         return locations
+    def _move_inactive(self, resolved_actions, state, avoid):
+        """moves all the taxis that aren't assigned to a passenger"""
+        for i in range(len(resolved_actions)):
+            if resolved_actions[i][1] in self.passive:
+                tname = resolved_actions[i][1]
+                new_loc = self._random_step(state['taxis'][tname], avoid)
+                if new_loc is not None:
+                    resolved_actions[i] = ('move', resolved_actions[i][1], new_loc)
+        return resolved_actions
+    def _random_step(self, taxi, avoid):
+        """returns a random step in the map"""
+        loc = taxi["location"]
+        neighbors = self.graph.neighbors(loc)
+        cool_neighbors = [n for n in neighbors if n not in avoid]
+        if cool_neighbors == []:
+            return None
+        decision = random.choice(cool_neighbors)
+        return decision
 
     def act(self, state):
-        actions = []
-        for taxi, passenger in self.assignments:
-            sub_state = {}
-            sub_state["passengers"] = {passenger: state["passengers"][passenger]}
-            sub_state["taxis"] = {taxi: state["taxis"][taxi]}
-            sub_state["turns to go"] = state["turns to go"]
-            sub_state['graph'] = self.sub_graphs[(taxi, passenger)]
-            action = self.sub_agents[(taxi, passenger)].act(sub_state)
-            action = action[0] if action != 'reset' else action
-            actions.append(action)
-        resolved_actions = []
-        locations = set()
-        for atomic_action in actions:
-            location = atomic_action[2] if atomic_action[0]=="move" else state["taxis"][atomic_action[1]["location"]]
-            if location not in locations:
-                locations.update(location)
-                resolved_actions.append(atomic_action)
-            else:
-                resolved_actions.append(('wait', taxi))
-        return tuple(resolved_actions)
+        try:
+            actions = []
+            for taxi, passenger in self.assignments:
+                sub_state = {}
+                reset_count = 0
+                sub_state["passengers"] = {passenger: state["passengers"][passenger]}
+                sub_state["taxis"] = {taxi: state["taxis"][taxi]}
+                sub_state["turns to go"] = state["turns to go"]
+                sub_state['graph'] = self.sub_graphs[(taxi, passenger)]
+                action = self.sub_agents[(taxi, passenger)].act(sub_state)
+                if action == 'reset':
+                    reset_count +=1
+                action = action[0] if action != 'reset' else ('wait', taxi)
+                actions.append(action)
+            acted = [action[1] for action in actions]
+            for taxi in state["taxis"]:
+                if taxi not in acted:
+                    actions.append(('wait', taxi))
+
+            resolved_actions = []
+            locations = set()
+
+            locations.update([state["taxis"][action[1]]["location"] for action in actions if action[0]=='wait'])
+            for atomic_action in [action for action in actions if action[0] != 'wait']:
+                location = atomic_action[2] if atomic_action[0] == "move" else state["taxis"][atomic_action[1]]["location"]
+                if location not in locations:
+                    locations.add(location)
+                    resolved_actions.append(atomic_action)
+                else:
+                    resolved_actions.append(('wait', atomic_action[1]))
+            resolved_actions += [action for action in actions if action[0] == 'wait']
+            if [action[0] for action in resolved_actions].count('wait')==len(resolved_actions):
+                taxi_locations = [taxi["location"] for taxi in state["taxis"].values()]
+                resolved_actions = self._move_inactive(resolved_actions, state, taxi_locations)
+            resolved_actions = tuple(resolved_actions)
+
+            if reset_count >= len(actions) * 1.1:
+                resolved_actions = "reset"
+            return resolved_actions
+        except KeyError:
+            return "terminate"
