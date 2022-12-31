@@ -269,12 +269,12 @@ def main():
     main function
     """
     print(f"IDS: {ids}")
-    # for an_input in small_inputs:
-    #     try:
-    #         my_problem = TaxiStochasticProblem(an_input)
-    #         my_problem.run_round()
-    #     except EndOfGame:
-    #         continue
+    for an_input in small_inputs:
+        try:
+            my_problem = TaxiStochasticProblem(an_input)
+            my_problem.run_round()
+        except EndOfGame:
+            continue
     for an_input in my_check:
         try:
             my_problem = TaxiStochasticProblem(an_input)

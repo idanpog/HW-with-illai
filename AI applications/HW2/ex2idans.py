@@ -35,6 +35,7 @@ PROBABILITY = 4
 
 TURNS_TO_GO = 2
 
+
 def init_to_tup(initial):
     """converts the initial state to a tuple"""
     taxis = initial["taxis"]
@@ -49,17 +50,20 @@ def init_to_tup(initial):
     initial = (taxis_tups, passengers_tups, initial["turns to go"])
     return initial
 
+
 def passenger_name_to_id(initial):
     d = {}
     for idx, passenger in enumerate(initial[PASSENGERS]):
         d[passenger[NAME]] = idx
     return d
 
+
 def taxi_name_to_id(initial):
     d = {}
     for idx, taxi in enumerate(initial[TAXIS]):
         d[taxi[NAME]] = idx
     return d
+
 
 def build_graph(map):
     """
@@ -69,20 +73,23 @@ def build_graph(map):
     g = nx.grid_graph((m, n))
     nodes_to_remove = []
     for node in g:
-        if map[node[0]][node[1]] == 'I':
+        type = map[node[0]][node[1]]
+        if type == 'I':
             nodes_to_remove.append(node)
+        g.nodes[node]['type'] = type
+
     for node in nodes_to_remove:
         g.remove_node(node)
     return g
 
+
 class OptimalTaxiAgent:
     def __init__(self, initial):
-        self.map = initial["map"]
         self.initial = init_to_tup(initial)
         self.tName2id = taxi_name_to_id(self.initial)
         self.pName2id = passenger_name_to_id(self.initial)
         # self.add_change_prob(self.initial)
-        self.graph = build_graph(self.map)
+        self.graph = initial['graph'] if 'graph' in initial else build_graph(initial["map"])
         self.state = self.initial
         self.all_actions_dict = dict()
         self.next_dict = dict()
@@ -91,8 +98,6 @@ class OptimalTaxiAgent:
 
         self.policy = self.value_iterations()
         # print(f"the expected value is {self.policy[self.initial]}")
-
-
 
     def taxi_name_to_id(self):
         d = {}
@@ -105,11 +110,6 @@ class OptimalTaxiAgent:
         for idx, passenger in enumerate(self.initial[PASSENGERS]):
             d[passenger[NAME]] = idx
         return d
-
-    # def add_change_prob(self, initial_state):
-    #     """add the probability of change to the initial state"""
-    #     for passenger in initial_state[PASSENGERS]:
-    #         passenger[PROBABILITY] = 1 / (len(passenger[POSSIBLE_DESTINATIONS]) - 1) * passenger[PROBABILITY]
 
     def next(self, state, action):
         """runs the given action form the given state and returns the new state"""
@@ -205,11 +205,13 @@ class OptimalTaxiAgent:
             else:
                 locations.append(state[TAXIS][self.tName2id[atomic_action[1]]][LOC])
         return locations
+
     def clean_collisions(self, actions, state):
         """
         remove collisions from the actions
         """
-        new_actions = [action for action in actions if len(self.extract_locations(action, state)) == len(set(self.extract_locations(action, state)))]
+        new_actions = [action for action in actions if
+                       len(self.extract_locations(action, state)) == len(set(self.extract_locations(action, state)))]
 
         return new_actions
 
@@ -237,7 +239,7 @@ class OptimalTaxiAgent:
                     taxi_actions[taxi_name].append(('drop off', taxi_name, passenger[NAME]))
             # refuel actions
             i, j = state[TAXIS][self.tName2id[taxi_name]][LOC]
-            if self.map[i][j] == 'G':
+            if self.graph.nodes[(i, j)]['type'] == 'G':
                 taxi_actions[taxi_name].append(('refuel', taxi_name))
             # wait actions
             taxi_actions[taxi_name].append(('wait', taxi_name))
@@ -436,6 +438,7 @@ class OptimalTaxiAgent:
 class TaxiAgent:
     def __init__(self, initial):
         self.map = initial["map"]
+        self.initial_dict = initial
         self.initial = init_to_tup(initial)
         self.tName2id = taxi_name_to_id(self.initial)
         self.pName2id = passenger_name_to_id(self.initial)
@@ -445,12 +448,26 @@ class TaxiAgent:
         self.shortest_paths_len = dict(nx.all_pairs_shortest_path_length(self.graph))
         self.shortest_paths = dict(nx.all_pairs_shortest_path(self.graph))
         self.assignments = self.associate_passengers()
-        self.sub_maps = self.get_sub_graphs(self.map, self.assignments)
-        agents = [TaxiAgent
+        self.sub_graphs = self.get_sub_graphs(self.map, self.graph,self.assignments)
+        self.sub_agents = self.initiate_sub_agents(self.sub_graphs, self.assignments)
+
+    def initiate_sub_agents(self, sub_graphs, assignments):
+        """returns a dict that holds the sub agents as values and the tuples (taxi_name, passenger_name)
+         as keys"""
+        sub_agents = {}
+        for taxi, passenger in assignments:
+            thingy = {}
+            thingy["passengers"] = {passenger: self.initial_dict["passengers"][passenger]}
+            thingy["taxis"] = {taxi: self.initial_dict["taxis"][taxi]}
+            thingy["turns_to_go"] = self.initial_dict['turns to go']
+            thingy['graph'] = sub_graphs[(taxi, passenger)]
+            sub_agents[(taxi, passenger)] = OptimalTaxiAgent(thingy)
+        return sub_agents
 
     def get_sub_graphs(self, map, graph, assignments):
         """creates a sub map for each pair of taxi and passenger which includes
         the shortest paths between the taxi, the nearest gas station, the passenger and a chosen destination"""
+
         def _path_len(taxi, passenger, pair):
             """spits out the shortest possible path length that allows the taxi to pickup and deliver the passenger
             attempts:
@@ -467,9 +484,9 @@ class TaxiAgent:
                 options.append(self.d(tloc, ploc) + self.d(passenger, gas) + self.d(gas, dest))
             # else refuel then pick up
             # if dest right after the pickup
-            elif self.d(tloc, gas) <=FUEL:
+            elif self.d(tloc, gas) <= FUEL:
                 if self.d(gas, ploc) + self.d(ploc, dest) <= cap:
-                    options.append(self.d(tloc, gas) + self.d(gas, ploc)+ self.d(ploc, dest))
+                    options.append(self.d(tloc, gas) + self.d(gas, ploc) + self.d(ploc, dest))
                 # in this case we need to refuel before and after the pickup
                 elif self.d(gas, ploc) + self.d(ploc, gas) <= cap and self.d(gas, dest) <= cap:
                     options.append(self.d(tloc, gas) + self.d(gas, ploc) + self.d(ploc, gas) + self.d(gas, dest))
@@ -489,7 +506,7 @@ class TaxiAgent:
             # choose best pair of gas station and destination
             gas_stations = [(i, j) for i in range(len(map)) for j in range(len(map[0])) if map[i][j] == "G"]
             dest_gas_pairs = [(dest, gas) for dest in passenger[POSSIBLE_DESTINATIONS] for gas in gas_stations]
-            pair = min(dest_gas_pairs, key=lambda pair : _path_len(taxi, passenger, pair))
+            pair = min(dest_gas_pairs, key=lambda pair: _path_len(taxi, passenger, pair))
             return pair
 
         def _nodes_to_keep(map, graph, taxi, passenger):
@@ -510,7 +527,7 @@ class TaxiAgent:
         for taxi_name, passenger_name in assignments:
             taxi = self.state[TAXIS][self.tName2id[taxi_name]]
             passenger = self.state[PASSENGERS][self.pName2id[passenger_name]]
-            nodes_to_keep = _nodes_to_keep(graph, taxi, passenger)
+            nodes_to_keep = _nodes_to_keep(map, graph, taxi, passenger)
             sub_map = graph.subgraph(nodes_to_keep)
             sub_maps[(taxi, passenger)] = sub_map
 
@@ -525,10 +542,13 @@ class TaxiAgent:
     def associate_passengers(self):
         """
         associate the passengers with the taxis
+        returns tuple of tuples (taxi_name, passenger_name)
         """
+
         def _generate_possible_assignments():
             """
             generate all possible assignments
+            pairs of taxi and passenger names
             """
             taxi_names = list(self.tName2id.keys())
             passenger_names = list(self.pName2id.keys())
@@ -539,6 +559,7 @@ class TaxiAgent:
                 unique_combinations.append(list(zipped))
 
             return unique_combinations
+
         def _evaluate_assignment(assignment):
             """
             ignores fuel
@@ -547,8 +568,8 @@ class TaxiAgent:
             """
             score = 0
             for taxi_name, passenger_name in assignment:
-                taxi = self.state[self.tName2id[taxi_name]]
-                passenger = self.state[self.pName2id[passenger_name]]
+                taxi = self.state[TAXIS][self.tName2id[taxi_name]]
+                passenger = self.state[PASSENGERS][self.pName2id[passenger_name]]
                 score = max(score, self.d(taxi[LOC], passenger[LOC]))
             return score
 
@@ -563,13 +584,33 @@ class TaxiAgent:
         if taxi doesn't have a dedicated passenger, wait
         if taxi has a dedicated passenger, go towards the passenger
         """
-
+    def extract_locations(self, action, state):
+        """extract the taxi locations from an action"""
+        locations = []
+        for atomic_action in action:
+            if atomic_action[0] == 'move':
+                locations.append(atomic_action[2])
+            else:
+                locations.append(state[TAXIS][self.tName2id[atomic_action[1]]][LOC])
+        return locations
 
     def act(self, state):
-        raise NotImplemented
-
-    def initial_MDP(self, state):
-        """
-        return the initial MDP
-        """
-        pass
+        actions = []
+        for taxi, passenger in self.assignments:
+            sub_state = {}
+            sub_state["passengers"] = {passenger: state["passengers"][passenger]}
+            sub_state["taxis"] = {taxi: state["taxis"][taxi]}
+            sub_state["turns_to_go"] = state["turns_to_go"]
+            sub_state['graph'] = self.sub_graphs[(taxi, passenger)]
+            action = self.sub_agents[(taxi, passenger)].act(sub_state)[0]
+            actions.append(action)
+        resolved_actions = []
+        locations = set()
+        for atomic_action in actions:
+            location = atomic_action[2] if atomic_action[0]=="move" else state["taxis"][atomic_action[1]["location"]]
+            if location not in locations:
+                locations.update(location)
+                resolved_actions.append(atomic_action)
+            else:
+                resolved_actions.append(('wait', taxi))
+        return resolved_actions
