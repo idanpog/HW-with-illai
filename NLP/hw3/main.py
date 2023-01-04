@@ -18,6 +18,7 @@ POS_VOCAB_SIZE = 45  # calculated using possible_pos_tags = count_possible_pos_t
 HIDDEN_DIM = 100
 MAX_SENTENCE_LENGHT = 100
 CHU_LIU_EVERY = 10
+MINI_FLAG = False
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 #device = torch.device('cpu')
@@ -85,9 +86,13 @@ def build_dir_structure():
 
 
 def create_sentence_list(path):
+    """creates a list of sentences from a file"""
+    tic = time.time()
+    build_dir_structure()
     if os.path.exists(f"generated_files\{path}.embedded"):
         # load the pickle file
         sentences = pickle.load(open(f"generated_files\{path}.embedded", "rb"))
+        print(f"loaded {path} from pickle file, time taken {time.time() - tic}")
         return sentences
 
     with open(path, 'r+', encoding='utf-8') as f:
@@ -105,10 +110,12 @@ def create_sentence_list(path):
                 del line[7]
                 if line[1] not in word_embedding:
                     line[1] = 'unk'
-                line = [line[0], line[1], word_embedding[line[1]], line[3], line[6]]
+                line = [int(line[0]), line[1], word_embedding[line[1]], line[3], min(int(line[6]), MAX_SENTENCE_LENGHT)]
                 sentence.append(line)
     f.close()
+    print(f"generated {path}.embedded sentences from file, time taken {time.time() - tic}")
     pickle.dump(sentences, open(f"generated_files\{path}.embedded", "wb"))
+    print(f"saved {path}.embedded to a pickle file, time taken {time.time() - tic}")
     return sentences
 
 
@@ -156,20 +163,25 @@ def sentence_to_tensor(sentence, pos_2_idx):
 
 def build_data_structs(path, pos_2_idx, mini=False):
     """builds the data structures needed for training and evaluating"""
+    tic = time.time()
     if os.path.exists(f"generated_files\{path}.fully_tensored"):
         # load the pickle file
         loaded_pos_2_idx, sentences = pickle.load(open(f"generated_files\{path}.fully_tensored", "rb"))
         if pos_2_idx == pos_2_idx:
+            print(f"loaded {path}.fully_tensored from pickle file, time taken {time.time() - tic}")
             return sentences if not mini else sentences[::10]
 
     sentences = create_sentence_list(path)
-    sen_lens = [torch.tensor(len(sentence)) for sentence in sentences if len(sentence) < MAX_SENTENCE_LENGHT]
+    sen_lens = [torch.tensor(min(len(sentence), MAX_SENTENCE_LENGHT)) for sentence in sentences]
     padded_sentences = [pad_sentence(sentence) for sentence in sentences if len(sentence) <= MAX_SENTENCE_LENGHT]
     x = [sentence_to_tensor(sentence, pos_2_idx) for sentence in padded_sentences if
          len(sentence) <= MAX_SENTENCE_LENGHT]
-    y = [build_truth_score_tensor(sentence) for sentence in sentences]
+    #y = [build_truth_score_tensor(sentence) for sentence in sentences]
+    y = [torch.tensor([int(word[4]) for word in sentence[:MAX_SENTENCE_LENGHT]]) for sentence in sentences]
     tensored_sentences = list(zip(x, y, sen_lens))
-    pickle.dump((pos_2_idx, tensored_sentences), open(f"generated_files\{path}.fully_tensored", "wb"))
+    print("generated tensored sentences, time taken", time.time() - tic)
+    pickle.dump((pos_2_idx, tensored_sentences), open(f"generated_files\{path}.fully_tensored", "wb"), protocol=pickle.HIGHEST_PROTOCOL)
+    print(f"saved tensored sentences to a pickle file {path}.fully_tensored , time taken", time.time() - tic)
     return tensored_sentences if not mini else tensored_sentences[::10]
 
 
@@ -211,7 +223,7 @@ def decode_sentences(preds, sent_lens):
     using the imported method decode_mst"""
     decoded_sentences = []
     for pred, sen_len in zip(preds, sent_lens):
-        decoded_sentences.append(decode_mst(pred.detach().cpu(), sen_len+1, has_labels=False)[0][1 : sen_len+1])
+        decoded_sentences.append(decode_mst(insert_zeros(pred, [0]).detach().cpu(), sen_len+1, has_labels=False)[0][1 : sen_len+1])
     return decoded_sentences
 def batch_sentences(sentences, batchsize):
     """batch sentences, drop last batch
@@ -238,7 +250,7 @@ def calculate_CE_loss(CELoss, preds, ys, sen_lens):
     loss = 0
     for pred, y, sen_len in zip(preds, ys, sen_lens):
         for i in range(sen_len):
-            loss += CELoss(pred[i][:sen_len+1], torch.argmax(y[i][:sen_len+1]))/sen_len
+            loss += CELoss(pred[i][:sen_len+1], y[i])/sen_len
 
     return loss
 def sum_loss(batch_size, sen_lens, cut_outputs, cut_labels):
@@ -250,19 +262,36 @@ def sum_loss(batch_size, sen_lens, cut_outputs, cut_labels):
     for j in range(batch_size):
         loss += criterion(cut_outputs[j], cut_labels[j])
     return loss
+
+def insert_zeros(x, all_j):
+    """
+    insert zeros to the tensor x in the positions all_j
+    taken from https://stackoverflow.com/questions/74423476/appending-zero-rows-to-a-2d-tensor-in-pytorch
+    :param x:
+    :param all_j:
+    :return:
+    """
+    zeros_ = torch.zeros_like(x[:1])
+    pieces = []
+    i = 0
+    for j in all_j + [len(x)]:
+        pieces.extend([x[i:j], zeros_])
+        i = j
+    return torch.cat(pieces[:-1],dim=0)
 def eval_first_sentence(sentence, sen_len, target):
     """evaluates the first sentence of the dev set"""
     cut_target = target[:sen_len]
     preds = torch.argmax(sentence[:sen_len, :sen_len], dim=1)
-    preds_chu = decode_mst(sentence.detach().cpu(), sen_len+1, has_labels = False)[0][1:sen_len+1]
-    target_decoded = torch.argmax(cut_target, dim=1)
+    preds_chu = decode_sentences([sentence], [sen_len])[0]
+    #preds_chu = decode_mst(sentence.detach().cpu(), sen_len+1, has_labels = False)[0][1:sen_len+1]
     print("\n")
     print("------------ FIRST SENTENCE EVAL ------------")
     print("Preds: ", preds)
     print("chuli Preds: ", preds_chu)
-    print("Target: ", target_decoded)
-    print(f"argmax Acc: {torch.sum(preds == target_decoded)/sen_len}")
-    print(f"bing chillin Acc: {torch.sum(torch.tensor(preds_chu,device=device) == target_decoded)/sen_len}")
+    print("Target: ", cut_target)
+    print(f"argmax Acc: {torch.sum(preds == cut_target)/sen_len}")
+    print(f"bing chillin Acc: {torch.sum(torch.tensor(preds_chu,device=device) == cut_target)/sen_len}")
+
 
 if __name__ == "__main__":
     # set torch into benchmark mode
@@ -272,9 +301,9 @@ if __name__ == "__main__":
 
     pos_2_idx = generate_pos_2_idx()
     model = DnnPosTagger(pos_2_idx).to(device)
-    dataset = CustomDataset("train.labeled", pos_2_idx, mini=True)
+    #dataset = CustomDataset("train.labeled", pos_2_idx, mini=True)
     kwargs = {'num_workers': 4, 'pin_memory': True, 'persistent_workers': True, 'drop_last': True}
-    train_loader = data.DataLoader(dataset, batch_size=batch_size, shuffle=True, **kwargs)
+    #train_loader = data.DataLoader(dataset, batch_size=batch_size, shuffle=True, **kwargs)
     # print number of parameters in the model
     print(f'The model has {count_parameters(model):,} trainable parameters')
     total_predictions = 0
@@ -283,7 +312,7 @@ if __name__ == "__main__":
     optimizer = optim.AdamW(model.parameters(), lr=0.000001)
     scaler = torch.cuda.amp.GradScaler()
 
-    train_sentences = build_data_structs("train.labeled", pos_2_idx, mini=False)
+    train_sentences = build_data_structs("train.labeled", pos_2_idx, mini=MINI_FLAG)
     test_sentences = build_data_structs("test.labeled", pos_2_idx, mini=False)
     train_batches = batch_sentences(train_sentences, batch_size)
     test_batches = batch_sentences(test_sentences, batch_size)
@@ -300,7 +329,7 @@ if __name__ == "__main__":
             labels = labels.to(device=device)
             sen_lens = sen_lens.to(device=device)
             true_classified = 0
-        #for i, ((word_embeds, pos_embeds), labels, sen_lens) in enumerate(tq := tqdm(batch_sentences(train_sentences, batch_size), leave=True)):
+            #for i, ((word_embeds, pos_embeds), labels, sen_lens) in enumerate(tq := tqdm(batch_sentences(train_sentences, batch_size), leave=True)):
             model.train()
             with torch.cuda.amp.autocast():
                 # Forward pass
@@ -308,7 +337,8 @@ if __name__ == "__main__":
                 # outputs = [outputs[:100*i, 100*(i+1)] for i in range(batch_size)]
                 cut_outputs = [out[:sen_lens[i], :sen_lens[i]] for i, out in enumerate(outputs)]
                 #cut_outputs = [outputs[i][sen_lens[i]:sen_lens[i]].view(sen_lens[i], sen_lens[i]) for i in range(batch_size)]
-                cut_labels = [label[:sen_lens[i], :sen_lens[i]].clone().fill_diagonal_(-torch.inf) for i, label in enumerate(labels)]
+                cut_labels = [label[:sen_len] for label, sen_len in zip(labels, sen_lens)]
+
                 # for j in range(lab)
                 loss = calculate_CE_loss(CELoss, outputs, labels, sen_lens)
                 #loss += sum_loss(batch_size, sen_lens, cut_outputs, cut_labels)
@@ -322,7 +352,7 @@ if __name__ == "__main__":
                 eval_first_sentence(outputs[0], sen_lens[0], labels[0])
             if i % CHU_LIU_EVERY == CHU_LIU_EVERY-1:
                 decoded = decode_sentences(outputs, sen_lens)
-                true_classified = + sum([torch.sum(torch.tensor(decoded_sent, device=device) == torch.argmax(decoded_label[:sen_len], dim=1)) for decoded_sent, decoded_label, sen_len in zip(decoded, labels, sen_lens)])
+                true_classified = + sum([torch.sum(torch.tensor(decoded_sent, device=device) == decoded_label[:sen_len]) for decoded_sent, decoded_label, sen_len in zip(decoded, labels, sen_lens)])
                 total_predictions += sum(sen_lens)
             del outputs, loss, cut_outputs, cut_labels, word_embeds, pos_embeds, labels, sen_lens
             torch.cuda.empty_cache()
@@ -341,25 +371,25 @@ if __name__ == "__main__":
                 # Forward pass
                 outputs = model(word_embeds, pos_embeds)
                 cut_outputs = [out[:sen_lens[i], :sen_lens[i]] for i, out in enumerate(outputs)]
-                cut_labels = [label[:sen_lens[i], :sen_lens[i]].clone().fill_diagonal_(-torch.inf) for i, label in enumerate(labels)]
+                #cut_labels = [label[:sen_lens[i], :sen_lens[i]].clone().fill_diagonal_(-torch.inf) for i, label in enumerate(labels)]
                 decoded = decode_sentences(outputs, sen_lens)
 
-                true_classified = + sum([torch.sum(torch.tensor(decoded_sent, device=device) == torch.argmax(decoded_label[:sen_len], dim=1)) for decoded_sent, decoded_label, sen_len in zip(decoded, labels, sen_lens)])
-                loss += sum_loss(batch_size, sen_lens, cut_outputs, cut_labels)
+                #true_classified = + sum([torch.sum(torch.tensor(decoded_sent, device=device) == decoded_label[:sen_len]) for decoded_sent, decoded_label, sen_len in zip(decoded, labels, sen_lens)])
+                loss += calculate_CE_loss(CELoss, outputs, labels, sen_lens)
                 if i % CHU_LIU_EVERY == CHU_LIU_EVERY - 1:
                     decoded = decode_sentences(outputs, sen_lens)
                     true_classified = + sum([torch.sum(
-                        torch.tensor(decoded_sent, device=device) == torch.argmax(decoded_label[:sen_len], dim=1)) for
-                                             decoded_sent, decoded_label, sen_len in zip(decoded, labels, sen_lens)])
+                        torch.tensor(decoded_sent, device=device) == decoded_label[:sen_len]) for
+                        decoded_sent, decoded_label, sen_len in zip(decoded, labels, sen_lens)])
                     total_predictions += sum(sen_lens)
-            test_accuracy = true_classified / total_predictions
             total_loss["Test"] += loss.item()
 
 
 
-            del outputs, loss, cut_outputs, cut_labels, word_embeds, pos_embeds, labels, sen_lens
+            del outputs, loss, cut_outputs, word_embeds, pos_embeds, labels, sen_lens
             torch.cuda.empty_cache()
             tq.set_description(f'Epoch {t + 1}/{num_epochs}\tTest Loss: {total_loss["Test"] / (i + 1):.3f}\t')
+        test_accuracy = true_classified / total_predictions
 
         print(f"train acc:{train_accuracy:.3f}\ttest acc:{test_accuracy:.3f}")
         total_losses["Train"].append(total_loss["Train"])
