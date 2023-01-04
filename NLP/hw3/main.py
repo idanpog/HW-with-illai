@@ -260,9 +260,9 @@ def eval_first_sentence(sentence, sen_len, target):
     print("------------ FIRST SENTENCE EVAL ------------")
     print("Preds: ", preds)
     print("chuli Preds: ", preds_chu)
-    print("Target: ", target)
+    print("Target: ", target_decoded)
     print(f"argmax Acc: {torch.sum(preds == target_decoded)/sen_len}")
-    print(f"bing chillin Acc: {torch.sum(preds_chu == target_decoded)/sen_len}")
+    print(f"bing chillin Acc: {torch.sum(torch.tensor(preds_chu,device=device) == target_decoded)/sen_len}")
 
 if __name__ == "__main__":
     # set torch into benchmark mode
