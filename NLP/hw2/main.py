@@ -172,6 +172,7 @@ def add_EOS_tags():
 # split dev_alt.tagged into sentences
 def create_sentence_list(train=True, comp=False):
     path = TRAIN_PATH_WITH_EOF if train else DEV_PATH_WITH_EOF
+    df = pd.read_csv(path, sep='\t', header=None, quoting=csv.QUOTE_NONE)
     if comp:
         path = "Files/data/test.untagged"
     with open(path, 'r+', encoding='utf-8') as f:
@@ -211,6 +212,16 @@ def create_sentence_batches(train=True, comp=False):
         torch.save(batches, f'my_files/train_batches.pkl' if train else f'my_files/test_batches.pkl')
         torch.save(batch_label_dict, f'my_files/train_batch_labels.pkl' if train else f'my_files/test_batch_labels.pkl')
 
+def show_compare_graph(title, train_values, valid_values):
+    """
+    plot the losses
+    """
+    plt.figure(f"{title} as a function of epochs", figsize = (8,8))
+    plt.plot(range(1, len(train_values)+1), train_values, label="train")
+    plt.plot(range(1, len(valid_values)+1), valid_values, label="validation")
+    plt.title(title)
+    plt.legend()
+    plt.savefig(f"{title}_graph.png")
 
 def create_label_dict(tags):
     """
