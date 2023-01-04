@@ -3,6 +3,7 @@ from matplotlib import pyplot as plt
 from torch import nn, optim
 from torch.nn import functional as F
 import gensim.downloader
+import optuna
 import pickle
 import os
 import time
@@ -13,12 +14,13 @@ from chu_liu_edmonds import decode_mst
 
 WORD_EMBED_SIZE = 100
 POS_EMBED_SIZE = 20
+NUM_EPOCHS = 5
 
 POS_VOCAB_SIZE = 45  # calculated using possible_pos_tags = count_possible_pos_tags(train_sent + test_sent + comp_sent)
 HIDDEN_DIM = 100
 MAX_SENTENCE_LENGHT = 100
 CHU_LIU_EVERY = 10
-MINI_FLAG = False
+MINI_FLAG = True
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 #device = torch.device('cpu')
@@ -83,6 +85,9 @@ def build_dir_structure():
     """makes sure the directory structure is in place"""
     if not os.path.exists("generated_files"):
         os.mkdir("generated_files")
+    if not os.path.exists("generated_files/studies"):
+        os.mkdir("generated_files/studies")
+
 
 
 def create_sentence_list(path):
@@ -245,15 +250,24 @@ def batch_sentences(sentences, batchsize):
     Xs = list(zip(WORD_embs, POS_idxs))
     return list(zip(Xs, Ys, SENS_lens))[:-1:]
 
-def calculate_CE_loss(CELoss, preds, ys, sen_lens):
+
+
+
+def calculate_CE_loss(preds, ys, sen_lens):
     """calculate the cross entropy loss"""
     loss = 0
     for pred, y, sen_len in zip(preds, ys, sen_lens):
         for i in range(sen_len):
-            loss += CELoss(pred[i][:sen_len+1], y[i])/sen_len
+            loss += F.cross_entropy(pred[i][:sen_len+1], y[i])/sen_len
 
     return loss
+
+
+"""
+######         needs to be fixed before use           ######
+
 def sum_loss(batch_size, sen_lens, cut_outputs, cut_labels):
+
     loss =0
     for j in range(batch_size):
         for k in range(sen_lens[j]):
@@ -262,7 +276,7 @@ def sum_loss(batch_size, sen_lens, cut_outputs, cut_labels):
     for j in range(batch_size):
         loss += criterion(cut_outputs[j], cut_labels[j])
     return loss
-
+"""
 def insert_zeros(x, all_j):
     """
     insert zeros to the tensor x in the positions all_j
@@ -293,56 +307,52 @@ def eval_first_sentence(sentence, sen_len, target):
     print(f"bing chillin Acc: {torch.sum(torch.tensor(preds_chu,device=device) == cut_target)/sen_len}")
 
 
-if __name__ == "__main__":
-    # set torch into benchmark mode
+def search_hyperparams():
+    """uses optuna to search the best hyper parameters, uses the run_experiment function"""
+    study_name = "test_study"
+    storage_name = "sqlite:///generated_files/studies{}.db".format(study_name)
+    study = optuna.create_study(study_name=study_name, storage=storage_name, load_if_exists=True)
+    study.trials_dataframe().to_csv(f"generated_files/studies/{study_name}.csv")
+    study.optimize(run_experiment, n_trials=100)
 
-    batch_size = 32
-    num_epochs = 50
+def run_experiment(trial):
+    """a wrapper function for the objective function using the trial"""
+    optimizers_dict = {"Adam": torch.optim.Adam, "SGD": torch.optim.SGD}
+    loss_dict = {"CE": calculate_CE_loss}
+    learning_rate = trial.suggest_float("learning_rate", 1e-6, 1e-1, log=True)
+    batchsize = trial.suggest_int("batch_size", 8, 256, log = True)
+    weight_dec = trial.suggest_float("weight_decay", 1e-6, 1e-2, log=True)
+    optimizer = optimizers_dict[trial.suggest_categorical("optimizer", tuple(optimizers_dict.keys()))]
+    loss_function = loss_dict[trial.suggest_categorical("loss_function", tuple(loss_dict.keys()))]
+    best_train_acc, best_test_acc = objective(batchsize, learning_rate, weight_dec, optimizer, loss_function, trial)
+    return 1-best_test_acc
 
+def objective(batch_size, learning_rate, weight_dec, optimizer_model, loss_function, trial=None):
+    """objective function for optuna"""
     pos_2_idx = generate_pos_2_idx()
     model = DnnPosTagger(pos_2_idx).to(device)
-    #dataset = CustomDataset("train.labeled", pos_2_idx, mini=True)
     kwargs = {'num_workers': 4, 'pin_memory': True, 'persistent_workers': True, 'drop_last': True}
-    #train_loader = data.DataLoader(dataset, batch_size=batch_size, shuffle=True, **kwargs)
-    # print number of parameters in the model
-    print(f'The model has {count_parameters(model):,} trainable parameters')
     total_predictions = 0
-    criterion = nn.MSELoss()
-    CELoss = nn.CrossEntropyLoss()
-    optimizer = optim.AdamW(model.parameters(), lr=0.000001)
-    scaler = torch.cuda.amp.GradScaler()
+
+    optimizer = optimizer_model(model.parameters(), lr=learning_rate, weight_decay=weight_dec)
 
     train_sentences = build_data_structs("train.labeled", pos_2_idx, mini=MINI_FLAG)
     test_sentences = build_data_structs("test.labeled", pos_2_idx, mini=False)
-    train_batches = batch_sentences(train_sentences, batch_size)
-    test_batches = batch_sentences(test_sentences, batch_size)
-    # for t in (tq := tqdm(range(num_epochs), position=0, leave=True)):
+    best_test_acc = 0
+    best_train_acc = 0
+
     total_losses = {"Train" : [], "Test" : []}
-    for t in range(num_epochs):
+    for epoch in range(NUM_EPOCHS):
         ##################
         # train the model#
         ##################
         total_loss = {"Train": 0, "Test": 0}
+        true_classified = 0
         for i, ((word_embeds, pos_embeds), labels, sen_lens) in enumerate(tq := tqdm(batch_sentences(train_sentences, batch_size), leave=True)):
-            word_embeds = word_embeds.to(device=device)
-            pos_embeds = pos_embeds.to(device=device)
-            labels = labels.to(device=device)
-            sen_lens = sen_lens.to(device=device)
-            true_classified = 0
-            #for i, ((word_embeds, pos_embeds), labels, sen_lens) in enumerate(tq := tqdm(batch_sentences(train_sentences, batch_size), leave=True)):
             model.train()
-            with torch.cuda.amp.autocast():
-                # Forward pass
-                outputs = model(word_embeds, pos_embeds)
-                # outputs = [outputs[:100*i, 100*(i+1)] for i in range(batch_size)]
-                cut_outputs = [out[:sen_lens[i], :sen_lens[i]] for i, out in enumerate(outputs)]
-                #cut_outputs = [outputs[i][sen_lens[i]:sen_lens[i]].view(sen_lens[i], sen_lens[i]) for i in range(batch_size)]
-                cut_labels = [label[:sen_len] for label, sen_len in zip(labels, sen_lens)]
-
-                # for j in range(lab)
-                loss = calculate_CE_loss(CELoss, outputs, labels, sen_lens)
-                #loss += sum_loss(batch_size, sen_lens, cut_outputs, cut_labels)
-
+            # Forward pass
+            outputs = model(word_embeds, pos_embeds)
+            loss = loss_function(outputs, labels, sen_lens)
             # Backward and optimize
             optimizer.zero_grad()
             loss.backward()
@@ -354,28 +364,24 @@ if __name__ == "__main__":
                 decoded = decode_sentences(outputs, sen_lens)
                 true_classified = + sum([torch.sum(torch.tensor(decoded_sent, device=device) == decoded_label[:sen_len]) for decoded_sent, decoded_label, sen_len in zip(decoded, labels, sen_lens)])
                 total_predictions += sum(sen_lens)
-            del outputs, loss, cut_outputs, cut_labels, word_embeds, pos_embeds, labels, sen_lens
+            del outputs, loss, word_embeds, pos_embeds, labels, sen_lens
             torch.cuda.empty_cache()
-            tq.set_description(f'Epoch {t + 1}/{num_epochs}\tTrain Loss: {total_loss["Train"] / (i + 1):.3f}\t')
-        train_accuracy = true_classified / total_predictions
+            tq.set_description(f'Epoch {epoch + 1}/{NUM_EPOCHS}\tTrain Loss: {total_loss["Train"] / (i + 1):.3f}\t')
+        train_accuracy = true_classified / max(total_predictions, 1)
 
         ##################
         # eval the model #
         ##################
         total_predictions = 0
+        true_classified = 0
         for i, ((word_embeds, pos_embeds), labels, sen_lens) in enumerate(tq := tqdm(batch_sentences(test_sentences, batch_size), leave=True)):
             model.eval()
             loss=0
-            true_classified = 0
             with torch.no_grad():
                 # Forward pass
                 outputs = model(word_embeds, pos_embeds)
-                cut_outputs = [out[:sen_lens[i], :sen_lens[i]] for i, out in enumerate(outputs)]
-                #cut_labels = [label[:sen_lens[i], :sen_lens[i]].clone().fill_diagonal_(-torch.inf) for i, label in enumerate(labels)]
-                decoded = decode_sentences(outputs, sen_lens)
 
-                #true_classified = + sum([torch.sum(torch.tensor(decoded_sent, device=device) == decoded_label[:sen_len]) for decoded_sent, decoded_label, sen_len in zip(decoded, labels, sen_lens)])
-                loss += calculate_CE_loss(CELoss, outputs, labels, sen_lens)
+                loss += loss_function(outputs, labels, sen_lens)
                 if i % CHU_LIU_EVERY == CHU_LIU_EVERY - 1:
                     decoded = decode_sentences(outputs, sen_lens)
                     true_classified = + sum([torch.sum(
@@ -384,18 +390,31 @@ if __name__ == "__main__":
                     total_predictions += sum(sen_lens)
             total_loss["Test"] += loss.item()
 
-
-
-            del outputs, loss, cut_outputs, word_embeds, pos_embeds, labels, sen_lens
+            del outputs, loss, word_embeds, pos_embeds, labels, sen_lens
             torch.cuda.empty_cache()
-            tq.set_description(f'Epoch {t + 1}/{num_epochs}\tTest Loss: {total_loss["Test"] / (i + 1):.3f}\t')
+            tq.set_description(f'Epoch {epoch + 1}/{NUM_EPOCHS}\tTest Loss: {total_loss["Test"] / (i + 1):.3f}\t')
         test_accuracy = true_classified / total_predictions
+
+        best_test_acc = max(best_test_acc, test_accuracy)
+        best_train_acc = max(best_train_acc, train_accuracy)
+
+        if trial != None:
+            trial.report(test_accuracy, epoch)
 
         print(f"train acc:{train_accuracy:.3f}\ttest acc:{test_accuracy:.3f}")
         total_losses["Train"].append(total_loss["Train"])
         total_losses["Test"].append(total_loss["Test"])
+    # clean the memory to avoid overflow after a long sequence of trials
+    del model, optimizer, train_sentences, test_sentences, total_loss
+    torch.cuda.empty_cache()
 
-    show_compare_graph("loss", total_losses["Train"], total_losses["Test"])
+    return best_train_acc, best_test_acc
+
+if __name__ == "__main__":
+    # set torch into benchmark mode
+    build_dir_structure()
+    search_hyperparams()
+
 
 
 
