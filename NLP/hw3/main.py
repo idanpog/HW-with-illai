@@ -14,13 +14,13 @@ from chu_liu_edmonds import decode_mst
 
 WORD_EMBED_SIZE = 100
 POS_EMBED_SIZE = 20
-NUM_EPOCHS = 5
+NUM_EPOCHS = 50
 
 POS_VOCAB_SIZE = 45  # calculated using possible_pos_tags = count_possible_pos_tags(train_sent + test_sent + comp_sent)
 HIDDEN_DIM = 100
 MAX_SENTENCE_LENGHT = 100
 CHU_LIU_EVERY = 10
-MINI_FLAG = True
+MINI_FLAG = False
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 #device = torch.device('cpu')
@@ -123,15 +123,6 @@ def create_sentence_list(path):
     print(f"saved {path}.embedded to a pickle file, time taken {time.time() - tic}")
     return sentences
 
-
-def train():
-    build_dir_structure()
-    train_sent, test_sent = create_sentence_list("train.labeled"), create_sentence_list("test.labeled")
-    tic = time.time()
-    y = [build_truth_score_tensor(sentence) for sentence in train_sent]
-    print(f"time taken {time.time() - tic}")
-
-
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
@@ -230,6 +221,7 @@ def decode_sentences(preds, sent_lens):
     for pred, sen_len in zip(preds, sent_lens):
         decoded_sentences.append(decode_mst(insert_zeros(pred, [0]).detach().cpu(), sen_len+1, has_labels=False)[0][1 : sen_len+1])
     return decoded_sentences
+
 def batch_sentences(sentences, batchsize):
     """batch sentences, drop last batch
     shuffle = True"""
@@ -250,9 +242,6 @@ def batch_sentences(sentences, batchsize):
     Xs = list(zip(WORD_embs, POS_idxs))
     return list(zip(Xs, Ys, SENS_lens))[:-1:]
 
-
-
-
 def calculate_CE_loss(preds, ys, sen_lens):
     """calculate the cross entropy loss"""
     loss = 0
@@ -261,7 +250,6 @@ def calculate_CE_loss(preds, ys, sen_lens):
             loss += F.cross_entropy(pred[i][:sen_len+1], y[i])/sen_len
 
     return loss
-
 
 """
 ######         needs to be fixed before use           ######
@@ -277,6 +265,7 @@ def sum_loss(batch_size, sen_lens, cut_outputs, cut_labels):
         loss += criterion(cut_outputs[j], cut_labels[j])
     return loss
 """
+
 def insert_zeros(x, all_j):
     """
     insert zeros to the tensor x in the positions all_j
@@ -292,6 +281,7 @@ def insert_zeros(x, all_j):
         pieces.extend([x[i:j], zeros_])
         i = j
     return torch.cat(pieces[:-1],dim=0)
+
 def eval_first_sentence(sentence, sen_len, target):
     """evaluates the first sentence of the dev set"""
     cut_target = target[:sen_len]
@@ -305,7 +295,6 @@ def eval_first_sentence(sentence, sen_len, target):
     print("Target: ", cut_target)
     print(f"argmax Acc: {torch.sum(preds == cut_target)/sen_len}")
     print(f"bing chillin Acc: {torch.sum(torch.tensor(preds_chu,device=device) == cut_target)/sen_len}")
-
 
 def search_hyperparams():
     """uses optuna to search the best hyper parameters, uses the run_experiment function"""
