@@ -111,6 +111,7 @@ class NewDnnPosTagger(nn.Module):
         return score_matrices
 
 
+
 # class DependencyParser(nn.Module):
 #     def __init__(self, *args):
 #         super(DependencyParser, self).__init__()
