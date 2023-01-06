@@ -16,7 +16,7 @@ from chu_liu_edmonds import decode_mst
 
 WORD_EMBED_SIZE = 100
 POS_EMBED_SIZE = 50
-NUM_EPOCHS = 50
+NUM_EPOCHS = 75
 
 POS_VOCAB_SIZE = 45  # calculated using possible_pos_tags = count_possible_pos_tags(train_sent + test_sent + comp_sent)
 HIDDEN_DIM = 256
@@ -63,11 +63,12 @@ class PosTagFC(nn.Module):
         self.layer3 = nn.Linear(hidden_size // 2, output_size)
         self.relu = nn.ReLU()
         self.dropout = nn.Dropout(p=0.5)
+        self.dropout2 = nn.Dropout(p=0.5)
 
     def forward(self, x):
         x = self.layer1(x)
         x = self.dropout(self.relu(x))
-        x = self.relu(self.layer2(x))
+        x = self.relu(self.dropout2(self.layer2(x)))
         x = self.layer3(x)
         return x
 
@@ -85,7 +86,7 @@ class NewDnnPosTagger(nn.Module):
         self.POS_embedding = nn.Embedding(POS_VOCAB_SIZE + 1, POS_EMBED_SIZE)
         self.lstm = nn.LSTM(input_size=WORD_EMBED_SIZE + POS_EMBED_SIZE, hidden_size=HIDDEN_DIM, num_layers=4,
                             bidirectional=True,
-                            batch_first=True, dropout=0.3)
+                            batch_first=True, dropout=0.4)
         self.Relu = nn.ReLU()
         # self.dropout = nn.Dropout(p=0.3)
         # self.hidden2score = nn.Sequential(self.fc1, self.Relu, self.fc2)
@@ -147,7 +148,7 @@ def build_dir_structure():
         os.mkdir("generated_files/studies")
 
 
-def create_sentence_list(path):
+def create_sentence_list(path, eval = False, mark_OOV = False):
     """creates a list of sentences from a file"""
     tic = time.time()
     build_dir_structure()
@@ -167,12 +168,12 @@ def create_sentence_list(path):
                 sentences.append(sentence)
                 sentence = []
             else:
-                line = line.lower()
                 line = line.split("\t")
                 del line[7]
-                if line[1] not in word_embedding:
-                    line[1] = 'unk'
-                line = [int(line[0]), line[1], word_embedding[line[1]], line[3], min(int(line[6]), MAX_SENTENCE_LENGHT)]
+                if line[1] not in word_embedding and mark_OOV:
+                    line[1] = line[1] + 'unk'
+
+                line = [int(line[0]), line[1], word_embedding[line[1].lower() if line[1] in word_embedding else 'unk'], line[3], 0 if eval else min(int(line[6]), MAX_SENTENCE_LENGHT)]
                 sentence.append(line)
     f.close()
     print(f"generated {path}.embedded sentences from file, time taken {time.time() - tic}")
@@ -215,28 +216,28 @@ def sentence_to_tensor(sentence, pos_2_idx):
     return word_emb_tensor, pos_idx_tensor
 
 
-def build_data_structs(path, pos_2_idx, mini=False):
+def build_data_structs(path, pos_2_idx, mini=False, eval = False, mark_OOV = False):
     """builds the data structures needed for training and evaluating"""
     tic = time.time()
-    if os.path.exists(f"generated_files\{path}.fully_tensored"):
+    if os.path.exists(f"generated_files\{path}{'.markOOV' if mark_OOV else ''}{'.eval' if eval else ''}.fully_tensored"):
         # load the pickle file
-        loaded_pos_2_idx, sentences = pickle.load(open(f"generated_files\{path}.fully_tensored", "rb"))
+        loaded_pos_2_idx, sentences = pickle.load(open(f"generated_files\{path}{'.markOOV' if mark_OOV else ''}{'.eval' if eval else ''}.fully_tensored", "rb"))
         if pos_2_idx == pos_2_idx:
-            print(f"loaded {path}.fully_tensored from pickle file, time taken {time.time() - tic}")
+            print(f"loaded {path}{'.markOOV' if mark_OOV else ''}{'.eval' if eval else ''}.fully_tensored from pickle file, time taken {time.time() - tic}")
             return sentences if not mini else sentences[::10]
 
-    sentences = create_sentence_list(path)
+    sentences = create_sentence_list(path, eval=eval, mark_OOV = mark_OOV)
     sentences = [sentence for sentence in sentences if len(sentence) <= MAX_SENTENCE_LENGHT]
     sen_lens = [torch.tensor(min(len(sentence), MAX_SENTENCE_LENGHT)) for sentence in sentences]
     padded_sentences = [pad_sentence(sentence) for sentence in sentences]
     x = [sentence_to_tensor(sentence, pos_2_idx) for sentence in padded_sentences]
     # y = [build_truth_score_tensor(sentence) for sentence in sentences]
     y = [torch.tensor([int(word[4]) for word in sentence[:MAX_SENTENCE_LENGHT]]) for sentence in sentences]
-    tensored_sentences = list(zip(x, y, sen_lens))
+    tensored_sentences = list(zip(zip(x, y, sen_lens), sentences)) if eval else list(zip(x, y, sen_lens))
     print("generated tensored sentences, time taken", time.time() - tic)
-    pickle.dump((pos_2_idx, tensored_sentences), open(f"generated_files\{path}.fully_tensored", "wb"),
+    pickle.dump((pos_2_idx, tensored_sentences), open(f"generated_files\{path}{'.markOOV' if mark_OOV else ''}{'.eval' if eval else ''}.fully_tensored", "wb"),
                 protocol=pickle.HIGHEST_PROTOCOL)
-    print(f"saved tensored sentences to a pickle file {path}.fully_tensored , time taken", time.time() - tic)
+    print(f"saved tensored sentences to a pickle file {path}{'.markOOV' if mark_OOV else ''}{'.eval' if eval else ''}.fully_tensored , time taken", time.time() - tic)
     return tensored_sentences if not mini else tensored_sentences[::10]
 
 
@@ -280,20 +281,23 @@ def decode_sentences(preds, sent_lens):
     using the imported method decode_mst"""
     decoded_sentences = []
     for pred, sen_len in zip(preds, sent_lens):
-        dec = decode_mst(insert_zeros(pred, [0]).detach().cpu(), sen_len + 1, has_labels=False)[0]
-        # decoded_sentences.append(
-        #     torch.from_numpy(dec).to(device)[1: sen_len + 1])
+        dec = decode_mst(insert_zeros(pred, [0]).detach().cpu().T, sen_len + 1, has_labels=False)[0]
         decoded_sentences.append(
-            torch.argmax(input=pred[:sen_len.item(), :sen_len.item()+1], dim=1).clone().detach().cpu())
+            torch.from_numpy(dec).to(device)[1: sen_len + 1])
+        # decoded_sentences.append(
+        #     torch.argmax(input=pred[:sen_len.item(), :sen_len.item()+1], dim=1).clone().detach().cpu())
     return decoded_sentences
 
 
-def batch_sentences(sentences, batchsize):
+def batch_sentences(sentences, batchsize, shuffle=True, eval=False):
     """batch sentences, drop last batch
     shuffle = True"""
-    r = torch.randperm(len(sentences))
-    sentences = [sentences[i] for i in r]
-    WORD_embs, POS_idxs, Ys, SENS_lens = [], [], [], []
+    if shuffle:
+        r = torch.randperm(len(sentences))
+        sentences = [sentences[i] for i in r]
+    WORD_embs, POS_idxs, Ys, SENS_lens, SENTenses = [], [], [], [], []
+    if eval:
+        sentences, uncoded_sentences = zip(*sentences)
     all_x, all_y, all_sen_lens = zip(*sentences)
     all_word_emb, all_pos_idx = zip(*all_x)
     for i in range(0, len(sentences), batchsize):
@@ -307,7 +311,11 @@ def batch_sentences(sentences, batchsize):
         Ys.append(Y)
         SEN_lens = all_sen_lens[i:i + batchsize]
         SENS_lens.append(torch.tensor(SEN_lens, device=device))
+        if eval:
+            SENTenses.append(uncoded_sentences[i:i + batchsize])
     Xs = list(zip(WORD_embs, POS_idxs))
+    if eval:
+        return list(zip(zip(Xs, Ys, SENS_lens), SENTenses))
     return list(zip(Xs, Ys, SENS_lens))[:-1:]
 
 
@@ -431,7 +439,7 @@ def objective(batch_size, learning_rate, weight_dec, optimizer_model, loss_funct
             total_loss["Train"] += loss.item() / batch_size
             if i == 0:
                 eval_first_sentence(outputs[0], sen_lens[0], labels[0])
-            if i % CHU_LIU_EVERY == 0:
+            if i % CHU_LIU_EVERY != 0:
                 decoded = decode_sentences(outputs, sen_lens)
                 true_classified += sum(
                     [torch.sum(decoded_sent.clone().to(device) == decoded_label[:sen_len]) for
@@ -440,8 +448,8 @@ def objective(batch_size, learning_rate, weight_dec, optimizer_model, loss_funct
             del outputs, loss, word_embeds, pos_embeds, labels, sen_lens
             torch.cuda.empty_cache()
             tq.set_description(f'Epoch {epoch + 1}/{NUM_EPOCHS}\tTrain Loss: {total_loss["Train"] / (i + 1):.3f}\t')
-        train_accuracy = true_classified / total_predictions
-
+        # train_accuracy = true_classified / total_predictions
+        train_accuracy = 0
         ##################
         # eval the model #
         ##################
@@ -516,17 +524,43 @@ def check_train_acc():
 
     print(f"test acc:{test_accuracy:.3f}")
 
+def load_best_model():
+    pos_2_idx = generate_pos_2_idx()
+    model = NewDnnPosTagger(pos_2_idx).to(device)
+    model.load_state_dict(torch.load("generated_files/best_model.pt"))
+    return model
+def load_and_save_predictions(path, mark_OOV):
+    """loads a file from path, and saves the predictions to a file with the same name but with .pred extension
+    in the file format"""
+    model = load_best_model()
+    idx_2_pos = {v: k for k, v in model.pos_2_index.items()}
+    test_sentences = build_data_structs(path, model.pos_2_index, mini=False, eval=True, mark_OOV=mark_OOV)
+    with open(path + ".pred", "w") as f:
+        for i, (((word_embeds, sentence_pos_indexes), labels, sen_lens), cur_batch_sentences) in enumerate(
+                tq := tqdm(batch_sentences(test_sentences, 100, shuffle=False, eval=True), leave=True)):
+            with torch.no_grad():
+                # Forward pass
+                outputs = model(word_embeds, sentence_pos_indexes, sen_lens)
 
-if __name__ == "__main__":
-    # set torch into benchmark mode
-    build_dir_structure()
-    # search_hyperparams()
-    # Hyperparameters
-    batch_size = 32
-    lr = 0.006
-    weight_decay = 1e-2
+                decoded = decode_sentences(outputs, sen_lens)
+                for decoded_sent, sen_len, sentence, cur_pos_indexes in zip(decoded, sen_lens, cur_batch_sentences, sentence_pos_indexes):
+                    for word_idx, (decoded_word, word, pos_idx) in enumerate(zip(decoded_sent, sentence, cur_pos_indexes)):
+                        f.write(f"{word_idx+1}\t{word[1]}\t_\t{idx_2_pos[pos_idx.item()]}\t_\t_\t{decoded_word}\t_\t_\t_\n")
+                    f.write("\n")
+
+def develop():
+    batch_size = 64
+    lr = 0.0025
+    weight_decay = 0.0075
     optim_model = torch.optim.AdamW
     loss = calculate_CE_loss
     objective(batch_size=batch_size, learning_rate=lr, weight_dec=weight_decay,
               optimizer_model=optim_model, loss_function=loss)
     # check_train_acc()
+    # search_hyperparams()
+    # Hyperparameters
+
+if __name__ == "__main__":
+    # set torch into benchmark mode
+    build_dir_structure()
+    load_and_save_predictions("test.labeled", mark_OOV=True)
