@@ -15,13 +15,13 @@ import torch.optim
 from chu_liu_edmonds import decode_mst
 
 WORD_EMBED_SIZE = 100
-POS_EMBED_SIZE = 20
+POS_EMBED_SIZE = 50
 NUM_EPOCHS = 50
 
 POS_VOCAB_SIZE = 45  # calculated using possible_pos_tags = count_possible_pos_tags(train_sent + test_sent + comp_sent)
-HIDDEN_DIM = 100
+HIDDEN_DIM = 256
 MAX_SENTENCE_LENGHT = 100
-CHU_LIU_EVERY = 10
+CHU_LIU_EVERY = 1
 MINI_FLAG = False
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -65,11 +65,10 @@ class PosTagFC(nn.Module):
         self.dropout = nn.Dropout(p=0.5)
 
     def forward(self, x):
-        x = self.dropout(self.layer1(x))
-        x = self.relu(x)
-        x = self.dropout(self.layer2(x))
-        x = self.relu(x)
-        x = self.relu(self.layer3(x))
+        x = self.layer1(x)
+        x = self.dropout(self.relu(x))
+        x = self.relu(self.layer2(x))
+        x = self.layer3(x)
         return x
 
 
@@ -86,8 +85,9 @@ class NewDnnPosTagger(nn.Module):
         self.POS_embedding = nn.Embedding(POS_VOCAB_SIZE + 1, POS_EMBED_SIZE)
         self.lstm = nn.LSTM(input_size=WORD_EMBED_SIZE + POS_EMBED_SIZE, hidden_size=HIDDEN_DIM, num_layers=4,
                             bidirectional=True,
-                            batch_first=True)
+                            batch_first=True, dropout=0.3)
         self.Relu = nn.ReLU()
+        # self.dropout = nn.Dropout(p=0.3)
         # self.hidden2score = nn.Sequential(self.fc1, self.Relu, self.fc2)
         self.pos_2_index = pos_2_index
 
@@ -96,7 +96,8 @@ class NewDnnPosTagger(nn.Module):
         embeds = torch.cat((word_embeds_tensor, pos_embeds), dim=2)
         lstm_out, _ = self.lstm(embeds)  # [batch_size, seq_length, 2*hidden_dim]
 
-        score_matrices = torch.zeros(word_embeds_tensor.shape[0], MAX_SENTENCE_LENGHT+1, MAX_SENTENCE_LENGHT+1).to(device)
+        score_matrices = torch.zeros(word_embeds_tensor.shape[0], MAX_SENTENCE_LENGHT + 1, MAX_SENTENCE_LENGHT + 1).to(
+            device)
         for i in range(word_embeds_tensor.shape[0]):
             first = torch.vstack([row.repeat(sen_lens[i] + 1, 1) for row in lstm_out[i][:sen_lens[i], :]])
             rooted_sentence = torch.vstack((torch.zeros(1, 2 * HIDDEN_DIM).to(device), lstm_out[i][:sen_lens[i], :]))
@@ -104,12 +105,11 @@ class NewDnnPosTagger(nn.Module):
             fc_input = torch.hstack((first, second))
             # fc_input = torch.vstack(
             #     [torch.cat(pair, 0) for pair in itertools.product(rooted_sentence, rooted_sentence)])
-            fc_output = self.fc(fc_input).fill_diagonal_(0).reshape((sen_lens[i], sen_lens[i]+1))
-            score_matrices[i][:sen_lens[i], :sen_lens[i]+1] = fc_output[:sen_lens[i], :sen_lens[i]+1]
+            fc_output = self.fc(fc_input).fill_diagonal_(0).reshape((sen_lens[i], sen_lens[i] + 1))
+            score_matrices[i][:sen_lens[i], :sen_lens[i] + 1] = fc_output[:sen_lens[i], :sen_lens[i] + 1]
         # [MAX_SENTENCE_LENGHT, MAX_SENTENCE_LENGHT]
 
         return score_matrices
-
 
 
 # class DependencyParser(nn.Module):
@@ -226,10 +226,10 @@ def build_data_structs(path, pos_2_idx, mini=False):
             return sentences if not mini else sentences[::10]
 
     sentences = create_sentence_list(path)
+    sentences = [sentence for sentence in sentences if len(sentence) <= MAX_SENTENCE_LENGHT]
     sen_lens = [torch.tensor(min(len(sentence), MAX_SENTENCE_LENGHT)) for sentence in sentences]
-    padded_sentences = [pad_sentence(sentence) for sentence in sentences if len(sentence) <= MAX_SENTENCE_LENGHT]
-    x = [sentence_to_tensor(sentence, pos_2_idx) for sentence in padded_sentences if
-         len(sentence) <= MAX_SENTENCE_LENGHT]
+    padded_sentences = [pad_sentence(sentence) for sentence in sentences]
+    x = [sentence_to_tensor(sentence, pos_2_idx) for sentence in padded_sentences]
     # y = [build_truth_score_tensor(sentence) for sentence in sentences]
     y = [torch.tensor([int(word[4]) for word in sentence[:MAX_SENTENCE_LENGHT]]) for sentence in sentences]
     tensored_sentences = list(zip(x, y, sen_lens))
@@ -280,10 +280,11 @@ def decode_sentences(preds, sent_lens):
     using the imported method decode_mst"""
     decoded_sentences = []
     for pred, sen_len in zip(preds, sent_lens):
+        dec = decode_mst(insert_zeros(pred, [0]).detach().cpu(), sen_len + 1, has_labels=False)[0]
         # decoded_sentences.append(
-        #     decode_mst(insert_zeros(pred, [0]).detach().cpu(), sen_len + 1, has_labels=False)[0][1: sen_len + 1])
+        #     torch.from_numpy(dec).to(device)[1: sen_len + 1])
         decoded_sentences.append(
-            torch.argmax(preds[:sen_len,:], 1).clone().detach().cpu())
+            torch.argmax(input=pred[:sen_len.item(), :sen_len.item()+1], dim=1).clone().detach().cpu())
     return decoded_sentences
 
 
@@ -315,7 +316,7 @@ def calculate_CE_loss(preds, ys, sen_lens):
     loss = 0
     for pred, y, sen_len in zip(preds, ys, sen_lens):
         # for i in range(sen_len):
-        prediction = pred[:sen_len, :sen_len+1].to(device)
+        prediction = pred[:sen_len, :sen_len + 1].to(device)
         target = y[:sen_len].to(device)
         loss += F.cross_entropy(prediction, target) / sen_len
 
@@ -358,13 +359,13 @@ def insert_zeros(x, all_j):
 def eval_first_sentence(sentence, sen_len, target):
     """evaluates the first sentence of the dev set"""
     cut_target = target[:sen_len]
-    preds = torch.argmax(sentence[:sen_len, :sen_len], dim=1)
+    preds = torch.argmax(sentence[:sen_len, :sen_len+1], dim=1)
     preds_chu = decode_sentences([sentence], [sen_len])[0]
     # preds_chu = decode_mst(sentence.detach().cpu(), sen_len+1, has_labels = False)[0][1:sen_len+1]
     print("\n")
     print("------------ FIRST SENTENCE EVAL ------------")
     print("Preds: ", preds)
-    print("chuli Preds: ", preds_chu)
+    print("chuli: ", preds_chu)
     print("Target: ", cut_target)
     print(f"argmax Acc: {torch.sum(preds == cut_target) / sen_len}")
     print(f"bing chillin Acc: {torch.sum(torch.tensor(preds_chu, device=device) == cut_target) / sen_len}")
@@ -405,11 +406,10 @@ def objective(batch_size, learning_rate, weight_dec, optimizer_model, loss_funct
     test_sentences = build_data_structs("test.labeled", pos_2_idx, mini=False)
     best_test_acc = 0
     best_train_acc = 0
+    max_acc = 0
 
     # print number of parameters in the model
     print(f'Number of parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}')
-
-
 
     total_losses = {"Train": [], "Test": []}
     for epoch in range(NUM_EPOCHS):
@@ -431,16 +431,16 @@ def objective(batch_size, learning_rate, weight_dec, optimizer_model, loss_funct
             total_loss["Train"] += loss.item() / batch_size
             if i == 0:
                 eval_first_sentence(outputs[0], sen_lens[0], labels[0])
-            if i % CHU_LIU_EVERY * 50 == CHU_LIU_EVERY * 50 - 1:
+            if i % CHU_LIU_EVERY == 0:
                 decoded = decode_sentences(outputs, sen_lens)
-                true_classified = + sum(
-                    [torch.sum(torch.tensor(decoded_sent, device=device) == decoded_label[:sen_len]) for
+                true_classified += sum(
+                    [torch.sum(decoded_sent.clone().to(device) == decoded_label[:sen_len]) for
                      decoded_sent, decoded_label, sen_len in zip(decoded, labels, sen_lens)])
                 total_predictions += sum(sen_lens)
             del outputs, loss, word_embeds, pos_embeds, labels, sen_lens
             torch.cuda.empty_cache()
             tq.set_description(f'Epoch {epoch + 1}/{NUM_EPOCHS}\tTrain Loss: {total_loss["Train"] / (i + 1):.3f}\t')
-        train_accuracy = true_classified / max(total_predictions, 1)
+        train_accuracy = true_classified / total_predictions
 
         ##################
         # eval the model #
@@ -458,11 +458,11 @@ def objective(batch_size, learning_rate, weight_dec, optimizer_model, loss_funct
                 loss += loss_function(outputs, labels, sen_lens)
                 if i % CHU_LIU_EVERY == 0:
                     decoded = decode_sentences(outputs, sen_lens)
-                    true_classified = + sum([torch.sum(
-                        torch.tensor(decoded_sent, device=device) == decoded_label[:sen_len]) for
+                    true_classified += sum([torch.sum(
+                        decoded_sent.clone().to(device) == decoded_label[:sen_len]) for
                         decoded_sent, decoded_label, sen_len in zip(decoded, labels, sen_lens)])
                     total_predictions += sum(sen_lens)
-            total_loss["Test"] += loss.item()
+            total_loss["Test"] += loss.item() / batch_size
 
             del outputs, loss, word_embeds, pos_embeds, labels, sen_lens
             torch.cuda.empty_cache()
@@ -472,10 +472,14 @@ def objective(batch_size, learning_rate, weight_dec, optimizer_model, loss_funct
         best_test_acc = max(best_test_acc, test_accuracy)
         best_train_acc = max(best_train_acc, train_accuracy)
 
+        # save best model
+        if best_test_acc == test_accuracy:
+            torch.save(model.state_dict(), "generated_files/best_model.pt")
+
         if trial != None:
             trial.report(test_accuracy, epoch)
 
-        print(f"train acc:{train_accuracy:.3f}\ttest acc:{test_accuracy:.3f}")
+        print(f"train acc:{train_accuracy:.3f}\ttest acc:{test_accuracy:.3f}, best test acc:{best_test_acc:.3f}")
         total_losses["Train"].append(total_loss["Train"])
         total_losses["Test"].append(total_loss["Test"])
     # clean the memory to avoid overflow after a long sequence of trials
@@ -484,6 +488,36 @@ def objective(batch_size, learning_rate, weight_dec, optimizer_model, loss_funct
 
     return best_train_acc, best_test_acc
 
+def check_train_acc():
+    pos_2_idx = generate_pos_2_idx()
+    model = NewDnnPosTagger(pos_2_idx).to(device)
+    model.load_state_dict(torch.load("generated_files/best_model.pt"))
+
+    test_sentences = build_data_structs("train.labeled", pos_2_idx, mini=False)
+    best_test_acc = 0
+    best_train_acc = 0
+    total_predictions = 0
+    true_classified = 0
+    for i, ((word_embeds, pos_embeds), labels, sen_lens) in enumerate(
+            tq := tqdm(batch_sentences(test_sentences, batch_size), leave=True)):
+        model.eval()
+        with torch.no_grad():
+            # Forward pass
+            outputs = model(word_embeds, pos_embeds, sen_lens)
+
+            decoded = decode_sentences(outputs, sen_lens)
+            true_classified += sum([torch.sum(
+                decoded_sent.clone().to(device) == decoded_label[:sen_len]) for
+                decoded_sent, decoded_label, sen_len in zip(decoded, labels, sen_lens)])
+            total_predictions += sum(sen_lens)
+
+        del outputs, word_embeds, pos_embeds, labels, sen_lens
+        torch.cuda.empty_cache()
+
+    test_accuracy = true_classified / total_predictions
+
+    print(f"test acc:{test_accuracy:.3f}")
+
 
 if __name__ == "__main__":
     # set torch into benchmark mode
@@ -491,9 +525,10 @@ if __name__ == "__main__":
     # search_hyperparams()
     # Hyperparameters
     batch_size = 32
-    lr = 0.0005
-    weight_decay = 0.95
+    lr = 0.006
+    weight_decay = 1e-2
     optim_model = torch.optim.AdamW
     loss = calculate_CE_loss
     objective(batch_size=batch_size, learning_rate=lr, weight_dec=weight_decay,
               optimizer_model=optim_model, loss_function=loss)
+    # check_train_acc()
