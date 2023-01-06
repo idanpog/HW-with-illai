@@ -170,7 +170,7 @@ def create_sentence_list(path, eval = False, mark_OOV = False):
             else:
                 line = line.split("\t")
                 del line[7]
-                if line[1] not in word_embedding and mark_OOV:
+                if line[1].lower() not in word_embedding and mark_OOV:
                     line[1] = line[1] + 'unk'
 
                 line = [int(line[0]), line[1], word_embedding[line[1].lower() if line[1] in word_embedding else 'unk'], line[3], 0 if eval else min(int(line[6]), MAX_SENTENCE_LENGHT)]
