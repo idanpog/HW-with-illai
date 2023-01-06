@@ -494,8 +494,6 @@ def check_train_acc():
     model.load_state_dict(torch.load("generated_files/best_model.pt"))
 
     test_sentences = build_data_structs("train.labeled", pos_2_idx, mini=False)
-    best_test_acc = 0
-    best_train_acc = 0
     total_predictions = 0
     true_classified = 0
     for i, ((word_embeds, pos_embeds), labels, sen_lens) in enumerate(
