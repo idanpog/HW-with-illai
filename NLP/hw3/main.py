@@ -5,7 +5,7 @@ from matplotlib import pyplot as plt
 from torch import nn, optim
 from torch.nn import functional as F
 import gensim.downloader
-import optuna
+#import optuna
 import pickle
 import os
 import time
@@ -16,7 +16,7 @@ from chu_liu_edmonds import decode_mst
 
 WORD_EMBED_SIZE = 100
 POS_EMBED_SIZE = 50
-NUM_EPOCHS = 75
+NUM_EPOCHS = 300
 
 POS_VOCAB_SIZE = 45  # calculated using possible_pos_tags = count_possible_pos_tags(train_sent + test_sent + comp_sent)
 HIDDEN_DIM = 256
@@ -78,10 +78,6 @@ class NewDnnPosTagger(nn.Module):
         super(NewDnnPosTagger, self).__init__()
 
         self.fc = PosTagFC(input_size=4 * HIDDEN_DIM, hidden_size=HIDDEN_DIM, output_size=1)
-
-        # self.fc1 = nn.Linear(HIDDEN_DIM * MAX_SENTENCE_LENGHT * 2, HIDDEN_DIM * MAX_SENTENCE_LENGHT // 2)
-        # self.fc2 = nn.Linear(HIDDEN_DIM * MAX_SENTENCE_LENGHT // 2, (MAX_SENTENCE_LENGHT + 1) * (MAX_SENTENCE_LENGHT))
-        # self.softmax = nn.Softmax(dim=1)
 
         self.POS_embedding = nn.Embedding(POS_VOCAB_SIZE + 1, POS_EMBED_SIZE)
         self.lstm = nn.LSTM(input_size=WORD_EMBED_SIZE + POS_EMBED_SIZE, hidden_size=HIDDEN_DIM, num_layers=4,
@@ -148,7 +144,7 @@ def build_dir_structure():
         os.mkdir("generated_files/studies")
 
 
-def create_sentence_list(path, eval = False, mark_OOV = False):
+def create_sentence_list(path, word_embedding, eval=False, mark_OOV=False):
     """creates a list of sentences from a file"""
     tic = time.time()
     build_dir_structure()
@@ -162,7 +158,7 @@ def create_sentence_list(path, eval = False, mark_OOV = False):
         lines = f.readlines()
         sentences = []
         sentence = []
-        word_embedding = gensim.downloader.load(f'glove-wiki-gigaword-{WORD_EMBED_SIZE}')
+        word_embedding = gensim.downloader.load(word_embedding)
         for i, line in enumerate(lines):
             if line == '\n':
                 sentences.append(sentence)
@@ -173,7 +169,8 @@ def create_sentence_list(path, eval = False, mark_OOV = False):
                 if line[1].lower() not in word_embedding and mark_OOV:
                     line[1] = line[1] + 'unk'
 
-                line = [int(line[0]), line[1], word_embedding[line[1].lower() if line[1] in word_embedding else 'unk'], line[3], 0 if eval else min(int(line[6]), MAX_SENTENCE_LENGHT)]
+                line = [int(line[0]), line[1], word_embedding[line[1].lower() if line[1] in word_embedding else 'unk'],
+                        line[3], 0 if eval else min(int(line[6]), MAX_SENTENCE_LENGHT)]
                 sentence.append(line)
     f.close()
     print(f"generated {path}.embedded sentences from file, time taken {time.time() - tic}")
@@ -216,17 +213,21 @@ def sentence_to_tensor(sentence, pos_2_idx):
     return word_emb_tensor, pos_idx_tensor
 
 
-def build_data_structs(path, pos_2_idx, mini=False, eval = False, mark_OOV = False):
+def build_data_structs(path, pos_2_idx, word_embedding, mini=False, eval=False, mark_OOV=False):
     """builds the data structures needed for training and evaluating"""
     tic = time.time()
-    if os.path.exists(f"generated_files\{path}{'.markOOV' if mark_OOV else ''}{'.eval' if eval else ''}.fully_tensored"):
+    if os.path.exists(
+            f"generated_files\{path}{word_embedding}{'.markOOV' if mark_OOV else ''}{'.eval' if eval else ''}.fully_tensored"):
         # load the pickle file
-        loaded_pos_2_idx, sentences = pickle.load(open(f"generated_files\{path}{'.markOOV' if mark_OOV else ''}{'.eval' if eval else ''}.fully_tensored", "rb"))
+        loaded_pos_2_idx, sentences = pickle.load(open(
+            f"generated_files\{path}{word_embedding}{'.markOOV' if mark_OOV else ''}{'.eval' if eval else ''}.fully_tensored",
+            "rb"))
         if pos_2_idx == pos_2_idx:
-            print(f"loaded {path}{'.markOOV' if mark_OOV else ''}{'.eval' if eval else ''}.fully_tensored from pickle file, time taken {time.time() - tic}")
+            print(
+                f"generated_files\{path}{word_embedding}{'.markOOV' if mark_OOV else ''}{'.eval' if eval else ''}.fully_tensored from pickle file, time taken {time.time() - tic}")
             return sentences if not mini else sentences[::10]
 
-    sentences = create_sentence_list(path, eval=eval, mark_OOV = mark_OOV)
+    sentences = create_sentence_list(path, word_embedding, eval=eval, mark_OOV=mark_OOV)
     sentences = [sentence for sentence in sentences if len(sentence) <= MAX_SENTENCE_LENGHT]
     sen_lens = [torch.tensor(min(len(sentence), MAX_SENTENCE_LENGHT)) for sentence in sentences]
     padded_sentences = [pad_sentence(sentence) for sentence in sentences]
@@ -235,9 +236,13 @@ def build_data_structs(path, pos_2_idx, mini=False, eval = False, mark_OOV = Fal
     y = [torch.tensor([int(word[4]) for word in sentence[:MAX_SENTENCE_LENGHT]]) for sentence in sentences]
     tensored_sentences = list(zip(zip(x, y, sen_lens), sentences)) if eval else list(zip(x, y, sen_lens))
     print("generated tensored sentences, time taken", time.time() - tic)
-    pickle.dump((pos_2_idx, tensored_sentences), open(f"generated_files\{path}{'.markOOV' if mark_OOV else ''}{'.eval' if eval else ''}.fully_tensored", "wb"),
+    pickle.dump((pos_2_idx, tensored_sentences), open(
+        f"generated_files\{path}{word_embedding}{'.markOOV' if mark_OOV else ''}{'.eval' if eval else ''}.fully_tensored",
+        "wb"),
                 protocol=pickle.HIGHEST_PROTOCOL)
-    print(f"saved tensored sentences to a pickle file {path}{'.markOOV' if mark_OOV else ''}{'.eval' if eval else ''}.fully_tensored , time taken", time.time() - tic)
+    print(
+        f"saved file generated_files\{path}{word_embedding}{'.markOOV' if mark_OOV else ''}{'.eval' if eval else ''}.fully_tensored , time taken",
+        time.time() - tic)
     return tensored_sentences if not mini else tensored_sentences[::10]
 
 
@@ -254,7 +259,7 @@ class CustomDataset(data.Dataset):
 
 def generate_pos_2_idx():
     """generates a dictionary of pos tags to idx"""
-    sentences = create_sentence_list("train.labeled")
+    sentences = create_sentence_list("train.labeled", f"glove-wiki-gigaword-{WORD_EMBED_SIZE}")
     pos_2_idx = {}
     for sentence in sentences:
         for word in sentence:
@@ -270,7 +275,7 @@ def show_compare_graph(title, train_values, valid_values):
     """
     plt.figure(f"{title} as a function of epochs", figsize=(8, 8))
     plt.plot(range(1, len(train_values) + 1), train_values, label="train")
-    plt.plot(range(1, len(valid_values) + 1), valid_values, label="validation")
+    plt.plot(range(1, len(valid_values) + 1), valid_values, label="test")
     plt.title(title)
     plt.legend()
     plt.savefig(f"generated_files\{title}_graph.png")
@@ -367,7 +372,7 @@ def insert_zeros(x, all_j):
 def eval_first_sentence(sentence, sen_len, target):
     """evaluates the first sentence of the dev set"""
     cut_target = target[:sen_len]
-    preds = torch.argmax(sentence[:sen_len, :sen_len+1], dim=1)
+    preds = torch.argmax(sentence[:sen_len, :sen_len + 1], dim=1)
     preds_chu = decode_sentences([sentence], [sen_len])[0]
     # preds_chu = decode_mst(sentence.detach().cpu(), sen_len+1, has_labels = False)[0][1:sen_len+1]
     print("\n")
@@ -383,35 +388,46 @@ def search_hyperparams():
     """uses optuna to search the best hyper parameters, uses the run_experiment function"""
     study_name = "test_study"
     storage_name = "sqlite:///generated_files/studies{}.db".format(study_name)
-    study = optuna.create_study(study_name=study_name, storage=storage_name, load_if_exists=True)
+    study = optuna.create_study(study_name="foo_study", storage=f"sqlite:///generated_files/studies/{study_name}.db",
+                                load_if_exists=True)
     study.trials_dataframe().to_csv(f"generated_files/studies/{study_name}.csv")
-    study.optimize(run_experiment, n_trials=100)
+    study.optimize(run_experiment, timeout=60 * 60 * 8)
 
 
 def run_experiment(trial):
     """a wrapper function for the objective function using the trial"""
-    optimizers_dict = {"Adam": torch.optim.Adam, "SGD": torch.optim.SGD}
-    loss_dict = {"CE": calculate_CE_loss}
-    learning_rate = trial.suggest_float("learning_rate", 1e-6, 1e-1, log=True)
-    batchsize = trial.suggest_int("batch_size", 8, 256, log=True)
-    weight_dec = trial.suggest_float("weight_decay", 1e-6, 1e-2, log=True)
+    optimizers_dict = {"Adam": torch.optim.Adam, "SGD": torch.optim.SGD, "Adamw": torch.optim.AdamW}
+    learning_rate = trial.suggest_float("learning_rate", 1e-4, 1e-2, log=True)
+    #    batchsize = trial.suggest_int("batch_size", 8, 128, log=True)
+    batchsize = 64
+    weight_dec = trial.suggest_float("weight_decay", 1e-4, 1e-2, log=True)
     optimizer = optimizers_dict[trial.suggest_categorical("optimizer", tuple(optimizers_dict.keys()))]
-    loss_function = loss_dict[trial.suggest_categorical("loss_function", tuple(loss_dict.keys()))]
-    best_train_acc, best_test_acc = objective(batchsize, learning_rate, weight_dec, optimizer, loss_function, trial)
+    word_embedding_list = [f"glove-twitter-{WORD_EMBED_SIZE}", f"glove-wiki-gigaword-{WORD_EMBED_SIZE}"]
+    # word_embedding = trial.suggest_categorical("word_embedding", word_embedding_list)
+    word_embedding = word_embedding_list[1]
+
+    # word_embedding_list= [f"glove-twitter-{dim}" for dim in [25, 50, 100, 200]] +\
+    #                     [f"glove-wiki-gigaword-{dim}" for dim in [50, 100, 200, 300]] + ["word2vec-google-news-300"] +\
+    #    [f"fasttext-wiki-news-subwords-300", "conceptnet-numberbatch-17-06-300"]
+
+    loss_function = calculate_CE_loss
+    attempting = f"lr={learning_rate}, batchsize={batchsize}, weight_decay={weight_dec}, optimizer={optimizer}, word_embedding={word_embedding}"
+    print(attempting)
+    _, best_test_acc = objective(batchsize, learning_rate, weight_dec, optimizer, loss_function, word_embedding, trial)
     return 1 - best_test_acc
 
 
-def objective(batch_size, learning_rate, weight_dec, optimizer_model, loss_function, trial=None):
+def objective(batch_size, learning_rate, weight_dec, optimizer_model, loss_function, word_embedding, trial=None):
     """objective function for optuna"""
     pos_2_idx = generate_pos_2_idx()
     model = NewDnnPosTagger(pos_2_idx).to(device)
+
     # kwargs = {'num_workers': 4, 'pin_memory': True, 'persistent_workers': True, 'drop_last': True}
-    total_predictions = 0
 
+    old_model_path = ''
     optimizer = optimizer_model(model.parameters(), lr=learning_rate, weight_decay=weight_dec)
-
-    train_sentences = build_data_structs("train.labeled", pos_2_idx, mini=MINI_FLAG)
-    test_sentences = build_data_structs("test.labeled", pos_2_idx, mini=False)
+    train_sentences = build_data_structs("train.labeled", pos_2_idx, word_embedding=word_embedding, mini=MINI_FLAG)
+    test_sentences = build_data_structs("test.labeled", pos_2_idx, word_embedding=word_embedding, mini=False)
     best_test_acc = 0
     best_train_acc = 0
     max_acc = 0
@@ -420,14 +436,16 @@ def objective(batch_size, learning_rate, weight_dec, optimizer_model, loss_funct
     print(f'Number of parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}')
 
     total_losses = {"Train": [], "Test": []}
+    accuracies = {"Train": [], "Test": []}
     for epoch in range(NUM_EPOCHS):
         ##################
         # train the model#
         ##################
         total_loss = {"Train": 0, "Test": 0}
         true_classified = 0
+        total_predictions = 0
         for i, ((word_embeds, pos_embeds), labels, sen_lens) in enumerate(
-                tq := tqdm(batch_sentences(train_sentences, batch_size), leave=True)):
+                tq := tqdm(batch_sentences(train_sentences, batch_size, shuffle=True), leave=True)):
             model.train()
             # Forward pass
             outputs = model(word_embeds, pos_embeds, sen_lens)
@@ -437,19 +455,19 @@ def objective(batch_size, learning_rate, weight_dec, optimizer_model, loss_funct
             loss.backward()
             optimizer.step()
             total_loss["Train"] += loss.item() / batch_size
-            if i == 0:
+            if i == 0 and trial == None:
                 eval_first_sentence(outputs[0], sen_lens[0], labels[0])
-            if i % CHU_LIU_EVERY != 0:
+            if i % CHU_LIU_EVERY == 0:
                 decoded = decode_sentences(outputs, sen_lens)
-                true_classified += sum(
-                    [torch.sum(decoded_sent.clone().to(device) == decoded_label[:sen_len]) for
-                     decoded_sent, decoded_label, sen_len in zip(decoded, labels, sen_lens)])
+                true_classified += sum([torch.sum(
+                    decoded_sent.clone().to(device) == decoded_label[:sen_len]) for
+                    decoded_sent, decoded_label, sen_len in zip(decoded, labels, sen_lens)])
+
                 total_predictions += sum(sen_lens)
             del outputs, loss, word_embeds, pos_embeds, labels, sen_lens
             torch.cuda.empty_cache()
             tq.set_description(f'Epoch {epoch + 1}/{NUM_EPOCHS}\tTrain Loss: {total_loss["Train"] / (i + 1):.3f}\t')
-        # train_accuracy = true_classified / total_predictions
-        train_accuracy = 0
+        train_accuracy = true_classified / total_predictions
         ##################
         # eval the model #
         ##################
@@ -476,32 +494,52 @@ def objective(batch_size, learning_rate, weight_dec, optimizer_model, loss_funct
             torch.cuda.empty_cache()
             tq.set_description(f'Epoch {epoch + 1}/{NUM_EPOCHS}\tTest Loss: {total_loss["Test"] / (i + 1):.3f}\t')
         test_accuracy = true_classified / total_predictions
-
         best_test_acc = max(best_test_acc, test_accuracy)
         best_train_acc = max(best_train_acc, train_accuracy)
-
         # save best model
         if best_test_acc == test_accuracy:
-            torch.save(model.state_dict(), "generated_files/best_model.pt")
+            if old_model_path != '':
+                os.remove(old_model_path)
+            if trial != None:
+                old_model_path = f"generated_files/best_model_{f'{trial.number=}'}_acc{round(test_accuracy.item(), 4)}.pt"
+            else:
+                old_model_path = f"generated_files/best_model.pt"
+            torch.save(model.state_dict(), old_model_path)
 
-        if trial != None:
-            trial.report(test_accuracy, epoch)
+        # if trial != None:
+        #     trial.report(test_accuracy, epoch)
+        #     # Handle pruning based on the intermediate value.
+        #     if trial.should_prune():
+        #         raise optuna.exceptions.TrialPruned()
+        #     if best_test_acc <= 0.2 and epoch > 5:
+        #         raise optuna.exceptions.TrialPruned()
+        #     if best_test_acc <= 0.8 and epoch > 14:
+        #         raise optuna.exceptions.TrialPruned()
+        #     if best_test_acc <= 0.87 and epoch > 40:
+        #         raise optuna.exceptions.TrialPruned()
+        #     if best_test_acc <= 0.89 and epoch > 60:
+        #         raise optuna.exceptions.TrialPruned()
 
         print(f"train acc:{train_accuracy:.3f}\ttest acc:{test_accuracy:.3f}, best test acc:{best_test_acc:.3f}")
         total_losses["Train"].append(total_loss["Train"])
         total_losses["Test"].append(total_loss["Test"])
+        accuracies["Train"].append(train_accuracy)
+        accuracies["Test"].append(test_accuracy)
+        accuracy_and_loss_lists = {"total_losses": total_losses, "accuracies": accuracies}
+        pickle.dump(accuracy_and_loss_lists, open(f"generated_files/accuracy_and_loss_lists", "wb"))
     # clean the memory to avoid overflow after a long sequence of trials
     del model, optimizer, train_sentences, test_sentences, total_loss
     torch.cuda.empty_cache()
 
     return best_train_acc, best_test_acc
 
-def check_train_acc():
+
+def check_train_acc(batch_size=32):
     pos_2_idx = generate_pos_2_idx()
     model = NewDnnPosTagger(pos_2_idx).to(device)
     model.load_state_dict(torch.load("generated_files/best_model.pt"))
 
-    test_sentences = build_data_structs("train.labeled", pos_2_idx, mini=False)
+    test_sentences = build_data_structs("train.labeled", pos_2_idx, word_embedding=f"glove-wiki-gigaword-{WORD_EMBED_SIZE}", mini=False)
     total_predictions = 0
     true_classified = 0
     for i, ((word_embeds, pos_embeds), labels, sen_lens) in enumerate(
@@ -524,18 +562,23 @@ def check_train_acc():
 
     print(f"test acc:{test_accuracy:.3f}")
 
+
 def load_best_model():
     pos_2_idx = generate_pos_2_idx()
     model = NewDnnPosTagger(pos_2_idx).to(device)
     model.load_state_dict(torch.load("generated_files/best_model.pt"))
     return model
-def load_and_save_predictions(path, mark_OOV):
+
+
+def load_and_save_predictions(path, mark_OOV=False):
     """loads a file from path, and saves the predictions to a file with the same name but with .pred extension
-    in the file format"""
+    in the file format
+    mark_OOV marks the OOV words in the returned file. this is useful for debugging"""
     model = load_best_model()
     idx_2_pos = {v: k for k, v in model.pos_2_index.items()}
-    test_sentences = build_data_structs(path, model.pos_2_index, mini=False, eval=True, mark_OOV=mark_OOV)
-    with open(path + ".pred", "w") as f:
+    test_sentences = build_data_structs(path, model.pos_2_index, mini=False, eval=True, mark_OOV=mark_OOV,
+                                        word_embedding=f"glove-wiki-gigaword-{WORD_EMBED_SIZE}")
+    with open("comp_325069565_212778229.labeled", "w") as f:
         for i, (((word_embeds, sentence_pos_indexes), labels, sen_lens), cur_batch_sentences) in enumerate(
                 tq := tqdm(batch_sentences(test_sentences, 100, shuffle=False, eval=True), leave=True)):
             with torch.no_grad():
@@ -543,24 +586,32 @@ def load_and_save_predictions(path, mark_OOV):
                 outputs = model(word_embeds, sentence_pos_indexes, sen_lens)
 
                 decoded = decode_sentences(outputs, sen_lens)
-                for decoded_sent, sen_len, sentence, cur_pos_indexes in zip(decoded, sen_lens, cur_batch_sentences, sentence_pos_indexes):
-                    for word_idx, (decoded_word, word, pos_idx) in enumerate(zip(decoded_sent, sentence, cur_pos_indexes)):
-                        f.write(f"{word_idx+1}\t{word[1]}\t_\t{idx_2_pos[pos_idx.item()]}\t_\t_\t{decoded_word}\t_\t_\t_\n")
+                for decoded_sent, sen_len, sentence, cur_pos_indexes in zip(decoded, sen_lens, cur_batch_sentences,
+                                                                            sentence_pos_indexes):
+                    for word_idx, (decoded_word, word, pos_idx) in enumerate(
+                            zip(decoded_sent, sentence, cur_pos_indexes)):
+                        f.write(
+                            f"{word_idx + 1}\t{word[1]}\t_\t{idx_2_pos[pos_idx.item()]}\t_\t_\t{decoded_word}\t_\t_\t_\n")
                     f.write("\n")
 
+
 def develop():
+    # set torch into benchmark mode
+    #torch.backends.cudnn.benchmark = True
+    # Hyperparameters
     batch_size = 64
     lr = 0.0025
     weight_decay = 0.0075
     optim_model = torch.optim.AdamW
     loss = calculate_CE_loss
     objective(batch_size=batch_size, learning_rate=lr, weight_dec=weight_decay,
-              optimizer_model=optim_model, loss_function=loss)
+              optimizer_model=optim_model, loss_function=loss, word_embedding=f"glove-wiki-gigaword-{WORD_EMBED_SIZE}")
     # check_train_acc()
     # search_hyperparams()
-    # Hyperparameters
+
 
 if __name__ == "__main__":
-    # set torch into benchmark mode
     build_dir_structure()
-    load_and_save_predictions("test.labeled", mark_OOV=True)
+    # load_and_save_predictions("test.labeled", mark_OOV=False)
+    develop()
+    # check_train_acc()
