@@ -27,7 +27,7 @@ public class ExManager {
         //updates the weight of the edge between the nodes with id = id1 and id = id2
         this.nodes_dict.get(id1).update_neighbor_weight(id2, weight);
         this.nodes_dict.get(id2).update_neighbor_weight(id1, weight);
-        this.nodes_dict.get(id1).start_broadcast();
+        //this.nodes_dict.get(id1).start_broadcast();
     }
 
     public void read_txt(){
@@ -52,8 +52,9 @@ public class ExManager {
         /**
          * starts the threads of all the nodes
          */
+
         this.nodes_dict.values().parallelStream().forEach(Node::launch_ports);
-        this.nodes_dict.values().parallelStream().forEach(Node::start);
+        this.nodes_dict.values().parallelStream().forEach(Node::run_link_state);
         //wait for all the nodes to start
         for (Thread Node : this.nodes_dict.values()) {
             try {

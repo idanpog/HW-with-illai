@@ -267,10 +267,6 @@ class OptimalTaxiAgent:
             #                     break
 
         all_actions.append(('reset',))
-        # terminate action
-        # all_actions.append('terminate')
-        if (('move', 'taxi 1', (2, 2)), ('wait', 'taxi 2')) in all_actions and state[TAXIS][1][LOC] == (2, 2):
-            print("something's weird")
         return all_actions
 
     def generate_all_states(self):

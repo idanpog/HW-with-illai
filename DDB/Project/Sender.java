@@ -3,7 +3,6 @@ import java.io.*;
 
 public class Sender extends Thread {
     private int port = -1;
-    private Socket socket = null;
     private DataOutputStream outputStream = null;
 
     public Sender(int port)
@@ -13,10 +12,13 @@ public class Sender extends Thread {
 
     public void start()
     {
-        while(true){
+        int count = 0;
+        while(count < 10) {
             try {
                 assert this.port != -1;
+                System.out.println("Sender trying to connect to port " + port);
                 Socket socket = new Socket("localhost", this.port);
+                System.out.println("Sender connected to port " + this.port);
                 this.outputStream = new DataOutputStream(socket.getOutputStream());
                 System.out.println("Sender started an output stream on port " + port);
                 break;
@@ -25,7 +27,18 @@ public class Sender extends Thread {
                 System.out.println("Error in Sender with port " + this.port+ ": " + e);
                 System.out.println("Trying again...");
             }
+            count++;
+            try {
+                synchronized(this){
+                wait(10);}
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+
+
         }
+        if (count==10)
+        {System.out.println("Failed to start Sender on port " + port);}
     }
     public void send(String message)
     {
@@ -41,7 +54,6 @@ public class Sender extends Thread {
         try {
             // Close the socket
             outputStream.close();
-            socket.close();
         } catch (IOException e) {
             System.out.println("Error: " + e);
         }

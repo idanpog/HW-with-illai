@@ -109,18 +109,21 @@ public class Node extends Thread {
 
     public void launch_ports(){
         //starts the listening and sending threads
+        this.receivers.parallelStream().forEach(Receiver :: bind);
+        try {
+            synchronized (this)
+            {wait(128);}
+        }
+        catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
         ArrayList<Thread> threads = new ArrayList<Thread>();
         threads.addAll(this.senders);
         threads.addAll(this.receivers);
+
         threads.parallelStream().forEach(Thread::start);
-        //joins the threads
-        for (Thread thread : threads) {
-            try {
-                thread.join();
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-        }
+
     }
 
 
