@@ -1,3 +1,4 @@
+import javax.net.ssl.SSLEngineResult;
 import java.net.*;
 import java.util.*;
 import java.io.*;
@@ -8,11 +9,17 @@ public class ExManager {
     private Hashtable<Integer, Node>  nodes_dict;
     private int num_of_nodes;
     private boolean connected = false;
+
+    private Hashtable<Integer,Node> port2receiverNode;
+    private Hashtable<Integer,Node> port2senderNode;
     // your code here
 
     public ExManager(String path){
         this.path = path;
         this.nodes_dict = new Hashtable<Integer, Node>();
+
+        this.port2receiverNode = new Hashtable<Integer, Node>();
+        this.port2senderNode = new Hashtable<Integer, Node>();
     }
 
     public Node get_node(int id){
@@ -41,28 +48,44 @@ public class ExManager {
                 String line = scanner.nextLine();
                 if (line.equals("stop")){
                     break;}
-                this.nodes_dict.put(Integer.parseInt(line.split(" ")[0]), new Node(line, this.num_of_nodes));
+                Node node = new Node(line, this.num_of_nodes);
+                this.nodes_dict.put(Integer.parseInt(line.split(" ")[0]), node);
+                this.update_dicts(line, node);
             }
+
             scanner.close();
         } catch (FileNotFoundException e) {
             e.printStackTrace();
+        }
+    }
+    private void update_dicts(String line, Node node){
+        /**
+         * builds the dictionaries that map the ports to their corresponding nodes
+         * port2receiverNode - maps the port that a node listens to the node
+         * port2senderNode - maps the port that a node sends to the node
+         */
+        String[] data = line.split(" ");
+        for (int i = 1; i < data.length; i+=4) {
+            int send_port = Integer.parseInt(data[i+2]);
+            int listen_port = Integer.parseInt(data[i+3]);
+            this.port2receiverNode.put(listen_port, node);
+            this.port2senderNode.put(send_port, node);
         }
     }
     private void initiate_connections(){
         /**
          * starts the threads of all the nodes
          */
-
-        this.nodes_dict.values().parallelStream().forEach(Node::launch_ports);
-        this.nodes_dict.values().parallelStream().forEach(Node::run_link_state);
-        //wait for all the nodes to start
-        for (Thread Node : this.nodes_dict.values()) {
-            try {
-                Node.join();
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-        }
+        this.port2receiverNode.forEach((port, node) -> {
+            Receiver r = new Receiver(port);
+            Sender s = new Sender(port);
+            r.bind();
+            s.start();
+            r.start();
+//            System.out.println("Started Receiver and listener on port " + port);
+            this.port2receiverNode.get(port).append_receiver(r);
+            this.port2senderNode.get(port).append_sender(s);
+        });
     }
     public void start(){
 

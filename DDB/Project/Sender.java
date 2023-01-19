@@ -16,11 +16,11 @@ public class Sender extends Thread {
         while(count < 10) {
             try {
                 assert this.port != -1;
-                System.out.println("Sender trying to connect to port " + port);
+//                System.out.println("Sender trying to connect to port " + port);
                 Socket socket = new Socket("localhost", this.port);
-                System.out.println("Sender connected to port " + this.port);
+//                System.out.println("Sender connected to port " + this.port);
                 this.outputStream = new DataOutputStream(socket.getOutputStream());
-                System.out.println("Sender started an output stream on port " + port);
+//                System.out.println("Sender started an output stream on port " + port);
                 break;
 
             } catch (IOException e) {

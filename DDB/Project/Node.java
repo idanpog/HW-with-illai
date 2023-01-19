@@ -29,8 +29,8 @@ public class Node extends Thread {
             int send_port = Integer.parseInt(data[i+2]);
             int listen_port = Integer.parseInt(data[i+3]);
             this.add_neighbor(send_port, listen_port, weight, id2);
-            this.senders.add(new Sender(send_port));
-            this.receivers.add(new Receiver(listen_port));
+//            this.senders.add(new Sender(send_port));
+//            this.receivers.add(new Receiver(listen_port));
         }
 //        System.out.println("Node " + this.id + " created, sender ports are: "+ this.senders.toString());
     }
@@ -45,6 +45,13 @@ public class Node extends Thread {
             }
             System.out.println();
         }
+    }
+
+    public void append_receiver(Receiver r){
+        this.receivers.add(r);
+    }
+    public void append_sender(Sender s){
+        this.senders.add(s);
     }
     public void update_neighbor_weight(int id, double weight){
         //updates the weight of the edge between this node and the node with id = id
@@ -136,11 +143,14 @@ public class Node extends Thread {
 
         this.start_broadcast();
         boolean changed = true;
-        while (changed)
+        for (int j =0; j<this.num_of_nodes; j++)
         {
             changed = false;
+            List<String> messages = new ArrayList<>();
+            this.receivers.parallelStream().forEachOrdered(r -> messages.add(r.returnStreamContent()));
             for (int i = 0; i < this.neighbors_dict.size(); i++) {
-                String message = this.receivers.get(i).returnStreamContent();
+                //String message = this.receivers.get(i).returnStreamContent();
+                String message = messages.get(i);
                 if (message != null) {
                     changed = true;
                     LSP lsp = new LSP(message);
@@ -150,6 +160,9 @@ public class Node extends Thread {
                         this.send_message_to_all(message, i);
                     }
                 }
+            }
+            if (!changed){
+                break;
             }
         }
     }

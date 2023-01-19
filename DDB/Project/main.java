@@ -4,7 +4,7 @@ import java.util.Scanner;
 
 public class main {
     public static void main(String[] args) throws FileNotFoundException {
-        String[] paths = {"input_1.txt", "input_1.txt"}; //enter the path to the files you want to run here.
+        String[] paths = {"input_1.txt", "input_2.txt"}; //enter the path to the files you want to run here.
         for(String path: paths) {
             ExManager m = new ExManager(path);
             m.read_txt();

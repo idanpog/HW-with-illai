@@ -18,14 +18,14 @@ public class Receiver extends Thread {
     note that this method should be called only after bind has been called.
     */
         try {
-            System.out.println("Receiver waiting on port " + port);
+//            System.out.println("Receiver waiting on port " + port);
             this.socket = this.serverSocket.accept();
-            System.out.println("Receiver accepted a client on port " + port);
-            this.socket.setSoTimeout(64);
+//            System.out.println("Receiver accepted a client on port " + port);
+            this.socket.setSoTimeout(1024);
 
             BufferedInputStream buff = new BufferedInputStream(socket.getInputStream());
             this.inputStream = new DataInputStream(buff);
-            System.out.println("Receiver started on port " + port);
+//            System.out.println("Receiver started on port " + port);
 
         } catch (IOException e) {
             System.out.println("Error launching the receiver: " + e);
@@ -36,7 +36,7 @@ public class Receiver extends Thread {
         try {
             this.serverSocket = new ServerSocket();
             serverSocket.bind(new InetSocketAddress("localhost", port));
-            System.out.println("Receiver bound to port " + port);
+//            System.out.println("Receiver bound to port " + port);
 
         } catch (IOException e) {
             System.out.println("Error binding the receiver: " + e);
