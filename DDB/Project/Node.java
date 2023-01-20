@@ -12,6 +12,7 @@ public class Node extends Thread {
     private Hashtable<Integer, Integer> neighbor2idx;
     private ArrayList<Receiver> receivers;
     private ArrayList<Sender> senders;
+    private int[] sequence_numbers;
 
 
     public Node(String line, int num_of_nodes){
@@ -22,18 +23,18 @@ public class Node extends Thread {
         this.receivers = new ArrayList<Receiver>();
         String[] data = line.split(" ");
         this.id = Integer.parseInt(data[0]);
-        init_adj_matrix();
-        for (int i = 1; i < data.length; i+=4) {
-            int id2 = Integer.parseInt(data[i]);
-            double weight = Double.parseDouble(data[i+1]);
-            int send_port = Integer.parseInt(data[i+2]);
-            int listen_port = Integer.parseInt(data[i+3]);
-            this.add_neighbor(send_port, listen_port, weight, id2);
+        init_adj_matrix(data);
+        this.sequence_numbers = new int[this.num_of_nodes];
+        for (int i = 0; i < this.num_of_nodes; i++) {
+            sequence_numbers[i] = -1;
+        }
+    }
+
+
 //            this.senders.add(new Sender(send_port));
 //            this.receivers.add(new Receiver(listen_port));
-        }
 //        System.out.println("Node " + this.id + " created, sender ports are: "+ this.senders.toString());
-    }
+
     public void print_graph(){
         //prints the adjacency matrix of the node as shown in the output examples
         for (int i = 0; i < this.num_of_nodes; i++) {
@@ -67,12 +68,12 @@ public class Node extends Thread {
     void send_message_to_all(String message, Integer skip_idx) {
         // Iterate through all routers in the network
         for (int i = 0; i < this.senders.size(); i++) {
-            if (i != skip_idx) {
+            if (i != skip_idx || true) {
                 this.senders.get(i).send(message);
             }
         }
     }
-    private void init_adj_matrix(){
+    private void init_adj_matrix(String[] data) {
         //initializes the adjacency matrix of the node
         //sets all the weights to -1
         this.adj_matrix = new double[this.num_of_nodes][this.num_of_nodes];
@@ -80,6 +81,13 @@ public class Node extends Thread {
             for (int j = 0; j < this.num_of_nodes; j++) {
                 this.adj_matrix[i][j] = -1;
             }
+        }
+        for (int i = 1; i < data.length; i += 4) {
+            int id2 = Integer.parseInt(data[i]);
+            double weight = Double.parseDouble(data[i + 1]);
+            int send_port = Integer.parseInt(data[i + 2]);
+            int listen_port = Integer.parseInt(data[i + 3]);
+            this.add_neighbor(send_port, listen_port, weight, id2);
         }
     }
     public LSP build_LSP(){
@@ -136,33 +144,45 @@ public class Node extends Thread {
 
     public void run_link_state(){
         //sets the sequence numbers for all the nodes in the graph to -1
-        int[] sequence_numbers = new int[this.num_of_nodes];
-        for (int i = 0; i < this.num_of_nodes; i++) {
-            sequence_numbers[i] = -1;
-        }
 
+        try {
+            synchronized (this)
+            {wait(1600);}
+        }
+        catch (InterruptedException e) {
+            e.printStackTrace();
+        }
         this.start_broadcast();
         boolean changed = true;
-        for (int j =0; j<this.num_of_nodes; j++)
+        for (int j =0; j<this.num_of_nodes;)
         {
             changed = false;
             List<String> messages = new ArrayList<>();
-            this.receivers.parallelStream().forEachOrdered(r -> messages.add(r.returnStreamContent()));
+            synchronized (this.receivers) {
+                this.receivers.parallelStream().forEachOrdered(r -> messages.add(r.returnStreamContent()));
+            }
+
             for (int i = 0; i < this.neighbors_dict.size(); i++) {
-                //String message = this.receivers.get(i).returnStreamContent();
+//                String message;
+//                synchronized (this) {
+//                    message = this.receivers.get(i).returnStreamContent();
+//                }
                 String message = messages.get(i);
+
                 if (message != null) {
-                    changed = true;
                     LSP lsp = new LSP(message);
                     this.update_adj_matrix(lsp);
-                    if (lsp.get_seq_num() > sequence_numbers[lsp.get_source_id() - 1]) {
-                        sequence_numbers[lsp.get_source_id() - 1] = lsp.get_seq_num();
+                    //System.out.println("update number is " + "j");
+                    if (lsp.get_seq_num() > this.sequence_numbers[lsp.get_source_id() - 1]) {
+                        this.sequence_numbers[lsp.get_source_id() - 1] = lsp.get_seq_num();
                         this.send_message_to_all(message, i);
+                        j++;
                     }
+
                 }
-            }
-            if (!changed){
-                break;
+                else{
+                    System.out.println("message is null, j is " + j + "and num_of_nodes is "+ this.num_of_nodes + "node id is " + this.id);
+                }
             }
         }
     }

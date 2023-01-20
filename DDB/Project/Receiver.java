@@ -21,7 +21,7 @@ public class Receiver extends Thread {
 //            System.out.println("Receiver waiting on port " + port);
             this.socket = this.serverSocket.accept();
 //            System.out.println("Receiver accepted a client on port " + port);
-            this.socket.setSoTimeout(1024);
+            this.socket.setSoTimeout(16);
 
             BufferedInputStream buff = new BufferedInputStream(socket.getInputStream());
             this.inputStream = new DataInputStream(buff);
