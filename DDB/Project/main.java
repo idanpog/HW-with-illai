@@ -4,8 +4,14 @@ import java.util.Scanner;
 
 public class main {
     public static void main(String[] args) throws FileNotFoundException {
-        String[] paths = {"input_1.txt", "input_2.txt"}; //enter the path to the files you want to run here.
+        String[] paths = { "input_5.txt"}; //enter the path to the files you want to run here.
+
         for(String path: paths) {
+            long start = System.currentTimeMillis();
+// some time passes
+
+            // time passes
+
             ExManager m = new ExManager(path);
             m.read_txt();
 
@@ -22,12 +28,16 @@ public class main {
                     System.out.println();
                 }
 
-                if(line.contains("update")){
+                if(line.contains("update")) {
                     String[] data = line.split(" ");
                     m.update_edge(Integer.parseInt(data[1]), Integer.parseInt(data[2]), Double.parseDouble(data[3]));
                 }
             }
             m.terminate();
+            long end = System.currentTimeMillis();
+            long elapsedTime = end - start;
+            System.out.println("The time it took to run the program is: " + elapsedTime/1000 + " seconds");
+
         }
     }
 }

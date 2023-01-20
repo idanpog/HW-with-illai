@@ -49,6 +49,8 @@ public class Sender extends Thread {
             System.out.println("Error: " + e);
         }
     }
+
+
     public void close()
     {
         try {
