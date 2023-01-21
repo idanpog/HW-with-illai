@@ -10,7 +10,7 @@ public class Node extends Thread {
     private int num_of_nodes;
     private Hashtable<Integer, Double[]> neighbors_dict;
     private Hashtable<Integer, Integer> neighbor2idx;
-    private ArrayList<Receiver> receivers;
+    public ArrayList<Receiver> receivers;
     private ArrayList<Sender> senders;
     private int[] sequence_numbers;
     private LSP my_last_lsp;
@@ -30,6 +30,22 @@ public class Node extends Thread {
         for (int i = 0; i < this.num_of_nodes; i++) {
             sequence_numbers[i] = -1;
         }
+    }
+    public Node(Node node)
+    {
+        //copy constructor
+        //used to rerun threads
+        this.neighbors_dict = node.neighbors_dict;
+        this.neighbor2idx = node.neighbor2idx;
+        this.num_of_nodes = node.num_of_nodes;
+        this.senders = node.senders;
+        this.receivers = node.receivers;
+        this.id = node.id;
+        this.adj_matrix = node.adj_matrix;
+        this.sequence_numbers = node.sequence_numbers;
+        this.seq_num = node.seq_num;
+        this.my_last_lsp = node.my_last_lsp;
+
     }
 
 
@@ -112,9 +128,7 @@ public class Node extends Thread {
         // Broadcast LSP to all neighbors
         this.my_last_lsp = this.build_LSP();
         String message = this.my_last_lsp.toString();
-        for (int i = 0; i < 100; i++) {
-            senders.forEach(sender -> sender.send(message));
-        }
+        senders.forEach(sender -> sender.send(message));
         this.last_lsp_sent_time = System.currentTimeMillis();
 
     }
@@ -132,14 +146,14 @@ public class Node extends Thread {
         });
     }
 
-    public void launch_ports(){
+    public void launch_ports() {
         //starts the listening and sending threads
-        this.receivers.parallelStream().forEach(Receiver :: bind);
+        this.receivers.parallelStream().forEach(Receiver::bind);
         try {
-            synchronized (this)
-            {wait(128);}
-        }
-        catch (InterruptedException e) {
+            synchronized (this) {
+                wait(128);
+            }
+        } catch (InterruptedException e) {
             e.printStackTrace();
         }
 
@@ -148,7 +162,13 @@ public class Node extends Thread {
         threads.addAll(this.receivers);
 
         threads.parallelStream().forEach(Thread::start);
+    }
 
+    public void halt_loop()
+    {
+        //stops the listening and sending threads
+        this.senders.parallelStream().forEach(Sender::halt_loop);
+        this.receivers.parallelStream().forEach(Receiver::halt_loop);
     }
 
     private boolean all_received(boolean[] received) {
@@ -170,7 +190,8 @@ public class Node extends Thread {
         }
         return missing;
     }
-    public void run_link_state() {
+    @Override
+    public void run() {
         //sets the sequence numbers for all the nodes in the graph to -1
         boolean[] received_message = new boolean[this.num_of_nodes];
         for (int i = 0; i < this.num_of_nodes; i++) {
@@ -209,21 +230,25 @@ public class Node extends Thread {
             }
             if (!changed){
 //                System.out.println("node " + this.id + ", is waiting for message received_state = + " + missing_messages(received_message));
-                try {
-                    synchronized (this) {
-                        wait(16);
-                    }
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
+//                try {
+//                    synchronized (this) {
+//                        wait(128);
+//                    }
+//                } catch (InterruptedException e) {
+//                    e.printStackTrace();
+//                }
             }
         }
-        System.out.println("node " + this.id + " has received all messages");
+//        System.out.println("node " + this.id + " has received all messages");
     }
-
+    public Node refreshed()
+    {
+        //returns a new node with the same parameters
+        return new Node(this);
+    }
     public void terminate(){
         //terminates the node
-        System.out.println("node " + this.id + " is terminating");
+//        System.out.println("node " + this.id + " is terminating");
         this.receivers.parallelStream().forEach(Receiver::close);
         this.senders.parallelStream().forEach(Sender::close);
     }

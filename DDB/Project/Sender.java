@@ -2,17 +2,21 @@ import java.net.*;
 import java.io.*;
 
 public class Sender extends Thread {
-    private int port = -1;
-    private DataOutputStream outputStream = null;
-    Socket socket;
+    private int port;
+    private DataOutputStream outputStream;
+    private Socket socket;
+    private boolean alive;
+    private java.util.concurrent.BlockingQueue<String> message_queue;
+
     public Sender(int port)
     {
         this.port = port;
+        this.message_queue = new java.util.concurrent.LinkedBlockingQueue<String>();
     }
-
-    public void start()
+@Override
+    public void run()
     {
-
+        this.alive = true;
         int count = 0;
         while(count < 10) {
             try {
@@ -41,25 +45,63 @@ public class Sender extends Thread {
         }
         if (count==10)
         {System.out.println("Failed to start Sender on port " + port);}
+        else
+        {
+            synchronized (this) {start_pooling_loop();}
+        }
+
     }
+
     public void send(String message)
     {
-        synchronized (this) {
+        synchronized (this.message_queue) {
+            try {
+                this.message_queue.put(message);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+    private void internal_send(String message)
+    {
+
+        synchronized (this.outputStream) {
             try {
                 // Send the message
-                this.wait(2);
                 outputStream.writeUTF(message);
                 outputStream.flush();
 //                System.out.println("Sender sent a message on port " + port);
             } catch (IOException e) {
                 System.out.println("Error: " + e);
             }
-            catch (InterruptedException e) {
-                e.printStackTrace();
+        }
+    }
+
+    public void start_pooling_loop()
+    {
+//        System.out.println("Sender started pooling loop on port " + port);
+        while(this.alive)
+        {
+            try {
+
+                String message = this.message_queue.take();
+                this.internal_send(message);
+
+            } catch (InterruptedException e) {
+                if (this.alive)
+                {
+                    e.printStackTrace();
+                }
+
             }
         }
     }
 
+    public void halt_loop()
+    {
+        this.internal_send("terminate");
+        this.alive = false;
+    }
 
     public void close()
     {

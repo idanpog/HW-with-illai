@@ -87,12 +87,32 @@ public class ExManager {
             this.port2senderNode.get(port).append_sender(s);
         });
     }
+    private void refresh_nodes(){
+        /**
+         * refreshes the nodes
+         */
+        this.nodes_dict.forEach((id, node) -> {
+            nodes_dict.put(id, node.refreshed());
+        });
+    }
     public void start(){
         if (this.connected==false){
             this.initiate_connections();
             this.connected = true;
+            //wait for all the nodes to finish their initialization
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+//            System.out.println("All nodes are connected");
         }
-        this.nodes_dict.values().parallelStream().forEach(Node::run_link_state);
+
+        this.refresh_nodes();
+        this.nodes_dict.values().parallelStream().forEach(Node::start);
+//        runnable_nodes.parallelStream().forEach(Thread::start);
+
+
         // wait for all nodes to join
         for (Thread Node : this.nodes_dict.values()) {
             try {
@@ -104,6 +124,10 @@ public class ExManager {
     }
 
     public void terminate(){
+
+        for (Node node : this.nodes_dict.values()) {
+            node.halt_loop();
+        }
         for (Node node : this.nodes_dict.values()) {
             node.terminate();
         }

@@ -6,30 +6,58 @@ public class Receiver extends Thread {
     private Socket socket = null;
     private ServerSocket serverSocket = null;
     private DataInputStream inputStream = null;
+    private java.util.concurrent.BlockingQueue<String> message_queue;
+    private boolean alive;
 
-    public Receiver(int port)
-    {
+    public Receiver(int port) {
         this.port = port;
+        this.message_queue = new java.util.concurrent.LinkedBlockingQueue<String>();
     }
-
-    public void start()
-    {/*
-    accepts the sockets from the matching senders,
+@Override
+    public void run() {
+        /*
+    accepts the sockets from the matching senders, and starts the pooling loop
     note that this method should be called only after bind has been called.
     */
+        this.alive = true;
         try {
 //            System.out.println("Receiver waiting on port " + port);
             this.socket = this.serverSocket.accept();
             this.inputStream = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
 //            System.out.println("Receiver accepted a client on port " + port);
             //this.socket.setSoTimeout(16);
-
-//            System.out.println("Receiver started on port " + port);
-
         } catch (IOException e) {
             System.out.println("Error launching the receiver: " + e);
         }
+        start_pooling_loop();
     }
+    public void start_pooling_loop()
+    {
+        /*
+        * starts the pooling loop, constantly seeks for messages and puts them in the message queue upon arrival
+        * */
+        while (this.alive) {
+            try {
+//                System.out.println("Receiver waiting for a message on port " + port);
+                String message = this.inputStream.readUTF();
+                if (message.equals("terminate"))
+                {
+                    this.alive = false;
+                    break;
+                }
+                synchronized (this.message_queue) { this.message_queue.put(message);}
+                }
+            catch (IOException e) {
+                if (this.alive) {
+                    System.out.println("Error in Receiver with port " + this.port + ": " + e);
+                    System.out.println("Trying again...");
+                }
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
 
     public void bind(){
         try {
@@ -43,24 +71,21 @@ public class Receiver extends Thread {
     }
 
     public String returnStreamContent() {
-        // returns the content of the input stream, timeout 10ms return null otherwise
-        String message = null;
-        synchronized (this) {
-            try {
-                if (inputStream.available() > 0) {
-                    message = inputStream.readUTF();
-                    return message;
+        // return a message sitting in the queue, null if the queue is empty, thread safe
+        String current_message = null;
+        synchronized (this.message_queue) {
+            if (!this.message_queue.isEmpty()) {
+                try {
+                    current_message = this.message_queue.take();
+                } catch (InterruptedException e) {
+                    if (this.alive) {
+                        e.printStackTrace();
+                    }
 
-                } else {
-                    return null;
                 }
-            } catch (SocketTimeoutException e) {
-                return null;
-            } catch (IOException e) {
-                System.out.println("Error: " + e);
             }
-            return null;
         }
+        return current_message;
     }
 
     private int count_occurrences(String big, String small) {
@@ -75,6 +100,12 @@ public class Receiver extends Thread {
         }
         return count;
     }
+
+    public void halt_loop()
+    {
+        this.alive = false;
+    }
+
     public void close()
     {
         try {
