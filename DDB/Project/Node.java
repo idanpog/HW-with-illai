@@ -13,6 +13,8 @@ public class Node extends Thread {
     private ArrayList<Receiver> receivers;
     private ArrayList<Sender> senders;
     private int[] sequence_numbers;
+    private LSP my_last_lsp;
+    private long last_lsp_sent_time;
 
 
     public Node(String line, int num_of_nodes){
@@ -67,10 +69,14 @@ public class Node extends Thread {
     }
     void send_message_to_all(String message, Integer skip_idx) {
         // Iterate through all routers in the network
-        for (int i = 0; i < this.senders.size(); i++) {
-            if (i != skip_idx || true) {
-                this.senders.get(i).send(message);
-            }
+        for (int j =0; j<1; j++){
+            this.senders.parallelStream().forEach(sender ->{sender.send(message);});
+//            for (int i = 0; i < this.senders.size(); i++) {
+//                if (i != skip_idx || true) {
+//                    this.senders.get(i).send(message);
+//                    this.last_lsp_sent_time = System.currentTimeMillis();
+//                }
+//            }
         }
     }
     private void init_adj_matrix(String[] data) {
@@ -104,9 +110,13 @@ public class Node extends Thread {
     }
     void start_broadcast() {
         // Broadcast LSP to all neighbors
-        LSP lsp = this.build_LSP();
-        String message = lsp.toString();
-        senders.parallelStream().forEach(sender -> sender.send(message));
+        this.my_last_lsp = this.build_LSP();
+        String message = this.my_last_lsp.toString();
+        for (int i = 0; i < 100; i++) {
+            senders.forEach(sender -> sender.send(message));
+        }
+        this.last_lsp_sent_time = System.currentTimeMillis();
+
     }
 
     public void update_adj_matrix(LSP lsp) {
@@ -141,33 +151,46 @@ public class Node extends Thread {
 
     }
 
-
-    public void run_link_state(){
+    private boolean all_received(boolean[] received) {
+        //checks if all the LSPs have been received
+        for (int i = 0; i < received.length; i++) {
+            if (!received[i]){
+                return false;
+            }
+        }
+        return true;
+    }
+    private String missing_messages(boolean[] received) {
+        //returns a string of the missing LSPs
+        String missing = "";
+        for (int i = 0; i < received.length; i++) {
+            if (!received[i]){
+                missing += (i+1) + ", ";
+            }
+        }
+        return missing;
+    }
+    public void run_link_state() {
         //sets the sequence numbers for all the nodes in the graph to -1
-
-        try {
-            synchronized (this)
-            {wait(1600);}
+        boolean[] received_message = new boolean[this.num_of_nodes];
+        for (int i = 0; i < this.num_of_nodes; i++) {
+            received_message[i] = false;
         }
-        catch (InterruptedException e) {
-            e.printStackTrace();
-        }
+        received_message[this.id-1] = true;
         this.start_broadcast();
         boolean changed = true;
-        for (int j =0; j<this.num_of_nodes;)
-        {
+//        for (int j = 0; j < this.num_of_nodes; ) {
+        while (!this.all_received(received_message)) {
             changed = false;
             List<String> messages = new ArrayList<>();
-            synchronized (this.receivers) {
+            synchronized (this) {
                 this.receivers.parallelStream().forEachOrdered(r -> messages.add(r.returnStreamContent()));
             }
-
             for (int i = 0; i < this.neighbors_dict.size(); i++) {
-//                String message;
-//                synchronized (this) {
-//                    message = this.receivers.get(i).returnStreamContent();
-//                }
-                String message = messages.get(i);
+
+                String message;
+//                message = this.receivers.get(i).returnStreamContent();
+                message = messages.get(i);
 
                 if (message != null) {
                     LSP lsp = new LSP(message);
@@ -175,20 +198,32 @@ public class Node extends Thread {
                     //System.out.println("update number is " + "j");
                     if (lsp.get_seq_num() > this.sequence_numbers[lsp.get_source_id() - 1]) {
                         this.sequence_numbers[lsp.get_source_id() - 1] = lsp.get_seq_num();
+                        received_message[lsp.get_source_id() - 1] = true;
                         this.send_message_to_all(message, i);
-                        j++;
+//                        j++;
+                        changed = true;
                     }
-
+                } else {
+//                    System.out.println("message is null, j is " + j + "and num_of_nodes is " + this.num_of_nodes + "node id is " + this.id);
                 }
-                else{
-                    System.out.println("message is null, j is " + j + "and num_of_nodes is "+ this.num_of_nodes + "node id is " + this.id);
+            }
+            if (!changed){
+//                System.out.println("node " + this.id + ", is waiting for message received_state = + " + missing_messages(received_message));
+                try {
+                    synchronized (this) {
+                        wait(16);
+                    }
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
                 }
             }
         }
+        System.out.println("node " + this.id + " has received all messages");
     }
 
     public void terminate(){
         //terminates the node
+        System.out.println("node " + this.id + " is terminating");
         this.receivers.parallelStream().forEach(Receiver::close);
         this.senders.parallelStream().forEach(Sender::close);
     }

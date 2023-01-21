@@ -88,7 +88,6 @@ public class ExManager {
         });
     }
     public void start(){
-
         if (this.connected==false){
             this.initiate_connections();
             this.connected = true;
@@ -102,8 +101,6 @@ public class ExManager {
                 e.printStackTrace();
             }
         }
-
-
     }
 
     public void terminate(){

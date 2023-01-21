@@ -14,6 +14,10 @@ public class LSP{
 
     public LSP(String message) {
         // Parse message
+        if (message.split("lsp_end").length !=1){
+            System.out.println("ERROR: LSP message is not well formed, contains a few messages sticked together");
+        }
+        message = message.split("lsp_end")[0];
         String[] items = message.split("\t");
         this.seq_num = Integer.parseInt(items[0]);
         this.source_id = Integer.parseInt(items[1]);
@@ -46,6 +50,7 @@ public class LSP{
         for (Pair<Pair<Integer, Integer>, Double> item : this.l_v) {
             output += "\t" + item.getKey().getKey() + " " + item.getKey().getValue() + " " + item.getValue();
         }
+        output+= "\tlsp_end";
         return output;
     }
 }

@@ -4,7 +4,7 @@ import java.io.*;
 public class Sender extends Thread {
     private int port = -1;
     private DataOutputStream outputStream = null;
-
+    Socket socket;
     public Sender(int port)
     {
         this.port = port;
@@ -12,12 +12,14 @@ public class Sender extends Thread {
 
     public void start()
     {
+
         int count = 0;
         while(count < 10) {
             try {
+//                Thread.sleep(32);
                 assert this.port != -1;
 //                System.out.println("Sender trying to connect to port " + port);
-                Socket socket = new Socket("localhost", this.port);
+                this.socket = new Socket("localhost", this.port);
 //                System.out.println("Sender connected to port " + this.port);
                 this.outputStream = new DataOutputStream(socket.getOutputStream());
 //                System.out.println("Sender started an output stream on port " + port);
@@ -42,11 +44,19 @@ public class Sender extends Thread {
     }
     public void send(String message)
     {
-        try {
-            // Send the message
-            outputStream.writeUTF(message);
-        } catch (IOException e) {
-            System.out.println("Error: " + e);
+        synchronized (this) {
+            try {
+                // Send the message
+                this.wait(2);
+                outputStream.writeUTF(message);
+                outputStream.flush();
+//                System.out.println("Sender sent a message on port " + port);
+            } catch (IOException e) {
+                System.out.println("Error: " + e);
+            }
+            catch (InterruptedException e) {
+                e.printStackTrace();
+            }
         }
     }
 
@@ -56,6 +66,7 @@ public class Sender extends Thread {
         try {
             // Close the socket
             outputStream.close();
+            socket.close();
         } catch (IOException e) {
             System.out.println("Error: " + e);
         }
