@@ -199,10 +199,7 @@ public class Node extends Thread {
         }
         received_message[this.id-1] = true;
         this.start_broadcast();
-        boolean changed = true;
-//        for (int j = 0; j < this.num_of_nodes; ) {
         while (!this.all_received(received_message)) {
-            changed = false;
             List<String> messages = new ArrayList<>();
             synchronized (this) {
                 this.receivers.parallelStream().forEachOrdered(r -> messages.add(r.returnStreamContent()));
@@ -210,45 +207,28 @@ public class Node extends Thread {
             for (int i = 0; i < this.neighbors_dict.size(); i++) {
 
                 String message;
-//                message = this.receivers.get(i).returnStreamContent();
                 message = messages.get(i);
 
                 if (message != null) {
                     LSP lsp = new LSP(message);
                     this.update_adj_matrix(lsp);
-                    //System.out.println("update number is " + "j");
                     if (lsp.get_seq_num() > this.sequence_numbers[lsp.get_source_id() - 1]) {
                         this.sequence_numbers[lsp.get_source_id() - 1] = lsp.get_seq_num();
                         received_message[lsp.get_source_id() - 1] = true;
                         this.send_message_to_all(message, i);
-//                        j++;
-                        changed = true;
                     }
-                } else {
-//                    System.out.println("message is null, j is " + j + "and num_of_nodes is " + this.num_of_nodes + "node id is " + this.id);
                 }
             }
-            if (!changed){
-//                System.out.println("node " + this.id + ", is waiting for message received_state = + " + missing_messages(received_message));
-//                try {
-//                    synchronized (this) {
-//                        wait(128);
-//                    }
-//                } catch (InterruptedException e) {
-//                    e.printStackTrace();
-//                }
-            }
         }
-//        System.out.println("node " + this.id + " has received all messages");
     }
     public Node refreshed()
     {
-        //returns a new node with the same parameters
+        //returns a new node with the same parameters.
+        //the reborn node could be run again and has the same parameters as the original node
         return new Node(this);
     }
     public void terminate(){
         //terminates the node
-//        System.out.println("node " + this.id + " is terminating");
         this.receivers.parallelStream().forEach(Receiver::close);
         this.senders.parallelStream().forEach(Sender::close);
     }

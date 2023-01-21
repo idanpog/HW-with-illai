@@ -1,4 +1,3 @@
-import javax.net.ssl.SSLEngineResult;
 import java.net.*;
 import java.util.*;
 import java.io.*;
@@ -9,10 +8,8 @@ public class ExManager {
     private Hashtable<Integer, Node>  nodes_dict;
     private int num_of_nodes;
     private boolean connected = false;
-
     private Hashtable<Integer,Node> port2receiverNode;
     private Hashtable<Integer,Node> port2senderNode;
-    // your code here
 
     public ExManager(String path){
         this.path = path;
@@ -34,7 +31,7 @@ public class ExManager {
         //updates the weight of the edge between the nodes with id = id1 and id = id2
         this.nodes_dict.get(id1).update_neighbor_weight(id2, weight);
         this.nodes_dict.get(id2).update_neighbor_weight(id1, weight);
-        //this.nodes_dict.get(id1).start_broadcast();
+
     }
 
     public void read_txt(){
@@ -82,14 +79,13 @@ public class ExManager {
             r.bind();
             s.start();
             r.start();
-//            System.out.println("Started Receiver and listener on port " + port);
             this.port2receiverNode.get(port).append_receiver(r);
             this.port2senderNode.get(port).append_sender(s);
         });
     }
     private void refresh_nodes(){
         /**
-         * refreshes the nodes
+         * refreshes the nodes they could be runned again.
          */
         this.nodes_dict.forEach((id, node) -> {
             nodes_dict.put(id, node.refreshed());
@@ -105,12 +101,10 @@ public class ExManager {
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
-//            System.out.println("All nodes are connected");
         }
 
         this.refresh_nodes();
         this.nodes_dict.values().parallelStream().forEach(Node::start);
-//        runnable_nodes.parallelStream().forEach(Thread::start);
 
 
         // wait for all nodes to join
