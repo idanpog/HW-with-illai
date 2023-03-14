@@ -20,12 +20,11 @@ public class Receiver extends Thread {
     note that this method should be called only after bind has been called.
     */
         this.alive = true;
+        //System.out.println("Receiver on port " + port + " started");
         try {
-//            System.out.println("Receiver waiting on port " + port);
+
             this.socket = this.serverSocket.accept();
             this.inputStream = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
-//            System.out.println("Receiver accepted a client on port " + port);
-            //this.socket.setSoTimeout(16);
         } catch (IOException e) {
             System.out.println("Error launching the receiver: " + e);
         }
@@ -52,7 +51,8 @@ public class Receiver extends Thread {
                     System.out.println("Error in Receiver with port " + this.port + ": " + e);
                     System.out.println("Trying again...");
                 }
-            } catch (InterruptedException e) {
+            }
+            catch (InterruptedException e) {
                 e.printStackTrace();
             }
         }

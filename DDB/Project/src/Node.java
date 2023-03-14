@@ -54,6 +54,12 @@ public class Node extends Thread {
 //        System.out.println("Node " + this.id + " created, sender ports are: "+ this.senders.toString());
 
     public void print_graph(){
+        //wait 1 seconds to make sure all the nodes are ready
+        try {
+            Thread.sleep(100);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
         //prints the adjacency matrix of the node as shown in the output examples
         for (int i = 0; i < this.num_of_nodes; i++) {
             for (int j = 0; j < this.num_of_nodes; j++) {

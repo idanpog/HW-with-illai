@@ -16,6 +16,7 @@ public class Sender extends Thread {
 @Override
     public void run()
     {
+        //System.out.println("Sender on port " + port + " started");
         this.alive = true;
         int count = 0;
         while(count < 10) {
@@ -40,16 +41,14 @@ public class Sender extends Thread {
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
-
-
         }
         if (count==10)
         {System.out.println("Failed to start Sender on port " + port);}
         else
         {
-            synchronized (this) {start_pooling_loop();}
+            synchronized (this) { start_pooling_loop();}
         }
-
+        //System.out.println("Sender on port " + port + " terminated");
     }
 
     public void send(String message)
@@ -85,6 +84,11 @@ public class Sender extends Thread {
             try {
 
                 String message = this.message_queue.take();
+                if (message.equals("terminate"))
+                {
+                    this.alive = false;
+                    break;
+                }
                 this.internal_send(message);
 
             } catch (InterruptedException e) {
@@ -92,15 +96,14 @@ public class Sender extends Thread {
                 {
                     e.printStackTrace();
                 }
-
             }
         }
     }
 
     public void halt_loop()
     {
-        this.internal_send("terminate");
         this.alive = false;
+        this.send("terminate");
     }
 
     public void close()
@@ -112,6 +115,7 @@ public class Sender extends Thread {
         } catch (IOException e) {
             System.out.println("Error: " + e);
         }
+
     }
     public String toString(){
         return "Sender on port " + this.port;

@@ -92,12 +92,22 @@ public class ExManager {
         });
     }
     public void start(){
+
+        //wait for 1 seconds using synchronized
+        synchronized (this) {
+            try {
+                wait(1000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+
         if (this.connected==false){
             this.initiate_connections();
             this.connected = true;
             //wait for all the nodes to finish their initialization
             try {
-                Thread.sleep(100);
+                Thread.sleep(500);
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
@@ -124,6 +134,15 @@ public class ExManager {
         }
         for (Node node : this.nodes_dict.values()) {
             node.terminate();
+        }
+
+        // wait for all nodes to join
+        for (Thread Node : this.nodes_dict.values()) {
+            try {
+                Node.join();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
         }
     }
 }
